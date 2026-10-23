@@ -234,6 +234,7 @@
       <span id="results-page-summary" class="muted">No results loaded.</span>
       <button id="results-next" type="button" disabled>Next</button>
       <a id="results-export-link" hidden>Download filtered CSV (all matching genes)</a>
+      <a id="results-report-link" hidden download>Download reproducible report (HTML)</a>
     </div>
   </section>
 
@@ -603,6 +604,7 @@
     const resultsPrevious = document.getElementById("results-previous");
     const resultsNext = document.getElementById("results-next");
     const resultsExportLink = document.getElementById("results-export-link");
+    const resultsReportLink = document.getElementById("results-report-link");
     const volcanoPlot = document.getElementById("volcano-plot");
     const volcanoSummary = document.getElementById("volcano-summary");
     const maPlot = document.getElementById("ma-plot");
@@ -898,6 +900,13 @@
       resultsExportLink.href = "/api/v1/runs/" + encodeURIComponent(runId) +
         "/results/export?" + exportParams.toString();
       resultsExportLink.hidden = false;
+      const reportParams = new URLSearchParams({
+        padj_max: params.get("padj_max"),
+        min_abs_log2fc: params.get("min_abs_log2fc")
+      });
+      resultsReportLink.href = "/api/v1/runs/" + encodeURIComponent(runId) +
+        "/report?" + reportParams.toString();
+      resultsReportLink.hidden = false;
     }
 
     document.getElementById("locate-result-gene").addEventListener("click", function () {
@@ -1059,6 +1068,8 @@
       resultsTableBody.textContent = "";
       resultsExportLink.hidden = true;
       resultsExportLink.removeAttribute("href");
+      resultsReportLink.hidden = true;
+      resultsReportLink.removeAttribute("href");
       volcanoPlot.textContent = "";
       refreshRun(runId, refreshToken).catch(showError);
     }
