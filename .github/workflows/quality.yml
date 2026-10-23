@@ -40,6 +40,9 @@ jobs:
       - name: Compile Python safety tooling
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
 
+      - name: Check smoke-test shell syntax
+        run: bash -n scripts/smoke_test_deseq2.sh
+
       - name: Run scanner unit tests
         run: python -m unittest discover -s tests -v
 
