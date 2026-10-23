@@ -54,9 +54,10 @@
 
 ## M4 — Workbench experience
 
-- [ ] Add run history and status API.
-- [ ] Expose logs, parameters, validation results, and artifacts.
-- [ ] Add UI only after API contracts are stable.
+- [x] Add a paginated run-history API with status filtering; the existing detail endpoint exposes current run status.
+- [x] Expose logs and checksummed artifact metadata through dedicated endpoints.
+- [ ] Persist and expose submitted parameter snapshots and structured validation results.
+- [ ] Add a run-history UI after API contracts are stable.
 - [ ] Add optional local model support only if it improves a measured use case.
 
 ## Public release gate for migrated scripts

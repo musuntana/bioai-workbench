@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.registry import list_workflows
@@ -13,7 +13,9 @@ from app.schemas import (
     ArtifactList,
     LogResponse,
     RunAccepted,
+    RunList,
     RunRequest,
+    RunState,
     RunStatus,
     WorkflowList,
 )
@@ -64,6 +66,15 @@ def submit_run(request: RunRequest, background_tasks: BackgroundTasks) -> dict[s
         "created_at": record["created_at"],
         "status_url": f"/api/v1/runs/{run_id}",
     }
+
+
+@app.get("/api/v1/runs", response_model=RunList)
+def list_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    status: RunState | None = Query(default=None),
+) -> dict[str, Any]:
+    return store.list_runs(limit=limit, offset=offset, status=status)
 
 
 @app.get("/api/v1/runs/{run_id}", response_model=RunStatus)

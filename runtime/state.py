@@ -59,6 +59,56 @@ class RunStore:
                 return None
             return json.loads(path.read_text(encoding="utf-8"))
 
+    def list_runs(
+        self, *, limit: int = 20, offset: int = 0, status: str | None = None
+    ) -> dict[str, Any]:
+        """Return a newest-first page of valid run records."""
+        if not 1 <= limit <= 100:
+            raise ValueError("Run history limit must be between 1 and 100.")
+        if offset < 0:
+            raise ValueError("Run history offset must be non-negative.")
+        if status is not None and status not in _ALLOWED_STATUSES:
+            raise ValueError("Unsupported run status filter.")
+
+        records: list[dict[str, Any]] = []
+        with self._lock:
+            for run_dir in self.root.iterdir():
+                if (
+                    not run_dir.is_dir()
+                    or run_dir.is_symlink()
+                    or not _RUN_ID.fullmatch(run_dir.name)
+                ):
+                    continue
+                record_path = run_dir / "run.json"
+                if not record_path.is_file():
+                    continue
+                try:
+                    record = json.loads(record_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                if record.get("run_id") != run_dir.name:
+                    continue
+                if record.get("status") not in _ALLOWED_STATUSES:
+                    continue
+                if not isinstance(record.get("created_at"), str):
+                    continue
+                if status is not None and record["status"] != status:
+                    continue
+                records.append(record)
+
+        records.sort(
+            key=lambda item: (item["created_at"], item["run_id"]),
+            reverse=True,
+        )
+        return {
+            "runs": records[offset : offset + limit],
+            "total": len(records),
+            "limit": limit,
+            "offset": offset,
+        }
+
     def update(self, run_id: str, **changes: Any) -> dict[str, Any]:
         allowed = {
             "status",

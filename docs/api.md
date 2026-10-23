@@ -34,6 +34,19 @@ curl -X POST http://127.0.0.1:8000/api/v1/runs \
 
 The response includes a `run_id` and `status_url`. Poll `GET /api/v1/runs/{run_id}`; inspect `/logs` and `/artifacts` after completion.
 
+
+## List run history
+
+The history endpoint returns newest-first records and supports bounded pagination and optional status filtering:
+
+```bash
+curl "http://127.0.0.1:8000/api/v1/runs?limit=20&offset=0"
+curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
+```
+
+The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response.
+
+
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.

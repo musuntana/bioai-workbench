@@ -78,10 +78,13 @@ class RunAccepted(BaseModel):
     status_url: str
 
 
+RunState = Literal["queued", "running", "succeeded", "failed", "timed_out"]
+
+
 class RunStatus(BaseModel):
     run_id: str
     workflow_id: str
-    status: Literal["queued", "running", "succeeded", "failed", "timed_out"]
+    status: RunState
     created_at: str
     updated_at: str
     started_at: str | None = None
@@ -90,6 +93,13 @@ class RunStatus(BaseModel):
     error_message: str | None = None
     artifact_count: int = 0
     log_truncated: bool = False
+
+
+class RunList(BaseModel):
+    runs: list[RunStatus]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
 
 
 class ArtifactInfo(BaseModel):
