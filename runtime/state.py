@@ -36,12 +36,28 @@ class RunStore:
         workflow_id: str,
         *,
         parameters: dict[str, Any] | None = None,
+        parent_run_id: str | None = None,
+        root_run_id: str | None = None,
+        attempt: int | None = None,
+        max_family_attempts: int | None = None,
     ) -> dict[str, Any]:
+        if parent_run_id is not None and not _RUN_ID.fullmatch(parent_run_id):
+            raise ValueError("Invalid parent run ID.")
+        if root_run_id is not None and not _RUN_ID.fullmatch(root_run_id):
+            raise ValueError("Invalid root run ID.")
+        if attempt is not None and (isinstance(attempt, bool) or attempt < 1):
+            raise ValueError("Run attempt must be a positive integer.")
+        if max_family_attempts is not None and max_family_attempts < 1:
+            raise ValueError("Maximum family attempts must be positive.")
+        root_id = root_run_id or run_id
         now = utc_now()
         record: dict[str, Any] = {
             "run_id": run_id,
             "workflow_id": workflow_id,
             "parameters": dict(parameters or {}),
+            "parent_run_id": parent_run_id,
+            "root_run_id": root_id,
+            "attempt": attempt or 1,
             "status": "queued",
             "created_at": now,
             "updated_at": now,
@@ -55,6 +71,11 @@ class RunStore:
             "environment_provenance": {},
         }
         with self._lock:
+            if parent_run_id is not None:
+                family_count = self._count_runs_in_family_unlocked(root_id)
+                if max_family_attempts is not None and family_count >= max_family_attempts:
+                    raise ValueError("Run lineage reached the maximum number of attempts.")
+                record["attempt"] = attempt or (family_count + 1)
             run_dir = self._run_dir(run_id)
             run_dir.mkdir(parents=True, exist_ok=False)
             (run_dir / "outputs").mkdir()
@@ -117,6 +138,38 @@ class RunStore:
             "limit": limit,
             "offset": offset,
         }
+
+    def count_runs_in_family(self, root_run_id: str) -> int:
+        """Count valid records in one rerun lineage, including legacy root records."""
+        if not _RUN_ID.fullmatch(root_run_id):
+            raise ValueError("Invalid root run ID.")
+        with self._lock:
+            return self._count_runs_in_family_unlocked(root_run_id)
+
+    def _count_runs_in_family_unlocked(self, root_run_id: str) -> int:
+        count = 0
+        for run_dir in self.root.iterdir():
+            if (
+                not run_dir.is_dir()
+                or run_dir.is_symlink()
+                or not _RUN_ID.fullmatch(run_dir.name)
+            ):
+                continue
+            record_path = run_dir / "run.json"
+            if not record_path.is_file():
+                continue
+            try:
+                record = json.loads(record_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(record, dict) or record.get("run_id") != run_dir.name:
+                continue
+            if record.get("status") not in _ALLOWED_STATUSES:
+                continue
+            family_id = record.get("root_run_id") or record.get("run_id")
+            if family_id == root_run_id:
+                count += 1
+        return count
 
     def update(self, run_id: str, **changes: Any) -> dict[str, Any]:
         allowed = {
