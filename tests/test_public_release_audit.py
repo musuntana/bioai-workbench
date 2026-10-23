@@ -51,7 +51,7 @@ class PublicReleaseAuditTests(unittest.TestCase):
             (private_dir / "notes.txt").write_text("synthetic placeholder", encoding="utf-8")
             findings = AUDIT.scan_root(root)
             self.assertIn(
-                ("data/private", 0, "prohibited_data_directory"),
+                ("data/private/notes.txt", 0, "prohibited_data_directory"),
                 findings,
             )
 
