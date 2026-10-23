@@ -10,7 +10,6 @@ from app.schemas import RunRequest
 from runtime.config import PROJECT_ROOT, RuntimeConfig
 from runtime.manager import RunManager
 
-
 OUTPUTS = (
     "differential_expression_all.csv",
     "differential_expression_significant.csv",
