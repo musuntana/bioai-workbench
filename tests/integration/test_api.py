@@ -8,6 +8,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from app.main import app
+from artifacts.manifest import write_artifact_manifest
+from runtime.config import PROJECT_ROOT, RuntimeConfig
+from runtime.manager import RunManager
 from runtime.state import RunStore
 
 
@@ -92,6 +95,41 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn("Run history", response.text)
         self.assertIn('id="history-status"', response.text)
         self.assertIn('id="refresh-history"', response.text)
+
+    def test_artifact_download_serves_only_manifested_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager = RunManager(
+                config=RuntimeConfig(
+                    project_root=PROJECT_ROOT,
+                    input_root=root / "inputs",
+                    runs_root=root / "runs",
+                )
+            )
+            run_id = "e" * 32
+            manager.store.create(run_id, "deseq2-basic")
+            output_dir = manager.store.run_dir(run_id) / "outputs"
+            artifact = output_dir / "differential_expression_all.csv"
+            artifact.write_text("gene_id,log2FoldChange\\nsynthetic_gene,1.2\\n", encoding="utf-8")
+            manifest = write_artifact_manifest(
+                output_dir, run_id=run_id, workflow_id="deseq2-basic"
+            )
+            expected_hash = manifest["artifacts"][0]["sha256"]
+
+            with patch("app.main.run_manager", manager):
+                response = self.client.get(
+                    f"/api/v1/runs/{run_id}/artifacts/differential_expression_all.csv"
+                )
+                unknown = self.client.get(f"/api/v1/runs/{run_id}/artifacts/run.json")
+                traversal = self.client.get(
+                    f"/api/v1/runs/{run_id}/artifacts/%2E%2E%2Frun.json"
+                )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("synthetic_gene,1.2", response.text)
+            self.assertEqual(response.headers["x-artifact-sha256"], expected_hash)
+            self.assertEqual(unknown.status_code, 404)
+            self.assertEqual(traversal.status_code, 404)
 
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)

@@ -170,7 +170,12 @@
           for (const artifact of payload.artifacts) {
             const item = document.createElement("li");
             item.textContent = artifact.path + " · " + artifact.size_bytes +
-              " bytes · SHA-256 " + artifact.sha256;
+              " bytes · SHA-256 " + artifact.sha256 + " · ";
+            const download = document.createElement("a");
+            download.href = "/api/v1/runs/" + encodeURIComponent(runId) +
+              "/artifacts/" + artifact.path.split("/").map(encodeURIComponent).join("/");
+            download.textContent = "Download";
+            item.appendChild(download);
             artifactList.appendChild(item);
           }
         }

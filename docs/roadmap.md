@@ -56,6 +56,7 @@
 
 - [x] Add a paginated run-history API with status filtering; the existing detail endpoint exposes current run status.
 - [x] Expose logs and checksummed artifact metadata through dedicated endpoints.
+- [x] Add manifest-gated artifact download with path containment checks.
 - [x] Persist and expose validated parameter snapshots with each run record.
 - [ ] Expose structured validation results and validation errors in a stable response contract.
 - [x] Add a run-history UI with status filtering and links into run details after the history API stabilized.

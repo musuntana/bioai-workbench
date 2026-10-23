@@ -80,6 +80,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `GET /api/v1/runs/{run_id}` — state and exit information.
 - `GET /api/v1/runs/{run_id}/logs` — bounded execution log.
 - `GET /api/v1/runs/{run_id}/artifacts` — relative artifact names, byte sizes, and SHA-256 checksums.
+- `GET /api/v1/runs/{run_id}/artifacts/{artifact_path}` — download a manifest-listed artifact.
 
 See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
 
