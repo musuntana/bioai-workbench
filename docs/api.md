@@ -60,4 +60,4 @@ After a run succeeds, download an artifact by its manifest-listed relative path.
 curl -fOJ "http://127.0.0.1:8000/api/v1/runs/<run_id>/artifacts/differential_expression_all.csv"
 ```
 
-The response includes the artifact's recorded SHA-256 in the `X-Artifact-SHA256` header. This endpoint is local-only and does not add authentication or make the service suitable for untrusted networks.
+The server recomputes SHA-256 immediately before sending the file and refuses the download with HTTP 409 if the file no longer matches the manifest. The response includes the verified digest in the `X-Artifact-SHA256` header. This endpoint is local-only and does not add authentication or make the service suitable for untrusted networks.

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -149,9 +151,21 @@ def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
     if not artifact_file.is_relative_to(output_root) or not artifact_file.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found.")
 
+    expected_hash = entry.get("sha256")
+    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        raise HTTPException(status_code=409, detail="Artifact checksum metadata is invalid.")
+
+    digest = hashlib.sha256()
+    with artifact_file.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    actual_hash = digest.hexdigest()
+    if not hmac.compare_digest(actual_hash, expected_hash):
+        raise HTTPException(status_code=409, detail="Artifact checksum mismatch; refusing download.")
+
     return FileResponse(
         artifact_file,
         filename=artifact_file.name,
         media_type="application/octet-stream",
-        headers={"X-Artifact-SHA256": str(entry.get("sha256", ""))},
+        headers={"X-Artifact-SHA256": actual_hash},
     )
