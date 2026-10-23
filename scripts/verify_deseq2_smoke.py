@@ -80,6 +80,16 @@ def verify_bundle(bundle: Path) -> dict[str, Any]:
         == hashlib.sha256(source_path.read_bytes()).hexdigest(),
         "Verified DESeq2 result CSV no longer matches its artifact manifest",
     )
+    rerun_result = bundle / "rerun-differential_expression_all.csv"
+    _require(
+        rerun_artifacts["differential_expression_all.csv"]["sha256"]
+        == hashlib.sha256(rerun_result.read_bytes()).hexdigest(),
+        "Downloaded rerun DESeq2 CSV does not match its manifest SHA-256",
+    )
+    _require(
+        rerun_result.read_bytes() == source_path.read_bytes(),
+        "Downloaded rerun CSV differs from the original DESeq2 output",
+    )
 
     threshold = results["summary"]["padj_max"]
     minimum_fc = results["summary"]["min_abs_log2fc"]
