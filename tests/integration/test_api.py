@@ -385,6 +385,10 @@ class WorkbenchApiTests(unittest.TestCase):
                     "/api/v1/inputs/preview",
                     params={"filename": "demo/../malformed.csv"},
                 )
+                nul_path = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "bad\x00.csv"},
+                )
                 malformed = self.client.get(
                     "/api/v1/inputs/preview",
                     params={"filename": "malformed.csv"},
@@ -399,6 +403,7 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertNotIn(str(root), response.text)
             self.assertEqual(traversal.status_code, 404)
             self.assertEqual(dot_segment.status_code, 404)
+            self.assertEqual(nul_path.status_code, 404)
             self.assertEqual(malformed.status_code, 422)
 
     def test_home_page_exposes_input_upload_controls(self) -> None:

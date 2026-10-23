@@ -215,8 +215,8 @@ def _resolve_validation_input(relative_name: str, field: str, errors: list[dict[
     """Resolve a request input under the configured root without leaking host paths."""
     if (
         not relative_name
-        or "\\x00" in relative_name
-        or "\\\\" in relative_name
+        or "\x00" in relative_name
+        or "\\" in relative_name
         or relative_name.startswith("/")
         or re.match(r"^[A-Za-z]:", relative_name)
         or any(part in {"", ".", ".."} for part in relative_name.split("/"))
