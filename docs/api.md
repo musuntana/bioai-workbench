@@ -44,7 +44,7 @@ curl "http://127.0.0.1:8000/api/v1/runs?limit=20&offset=0"
 curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
 ```
 
-The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response.
+The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter; selecting a record opens its current status, logs, and artifact checksums.
 
 
 ## Local trust boundary

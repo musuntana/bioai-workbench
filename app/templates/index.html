@@ -12,11 +12,15 @@
     .panel { border: 1px solid #8886; border-radius: 12px; padding: 1rem; margin: 1.25rem 0; }
     form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
     label { display: grid; gap: .35rem; font-size: .92rem; }
-    input { box-sizing: border-box; width: 100%; padding: .65rem; border: 1px solid #8888; border-radius: 7px; background: transparent; color: inherit; }
+    input, select { box-sizing: border-box; width: 100%; padding: .65rem; border: 1px solid #8888; border-radius: 7px; background: transparent; color: inherit; }
     .wide { grid-column: 1 / -1; }
     button { cursor: pointer; padding: .7rem 1rem; border: 0; border-radius: 8px; font-weight: 650; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: .8rem; border-radius: 8px; background: #8881; }
     ul { padding-left: 1.25rem; }
+    .history-controls { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+    .history-controls label { flex: 1 1 14rem; }
+    #history-list { display: grid; gap: .5rem; list-style: none; padding: 0; }
+    .history-run { width: 100%; text-align: left; border: 1px solid #8886; background: #8881; font-weight: 500; overflow-wrap: anywhere; }
     @media (max-width: 620px) { form { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
   </style>
 </head>
@@ -27,6 +31,25 @@
   <section class="panel">
     <h2>Available workflows</h2>
     <div id="workflow-list" class="muted">Loading workflow registry…</div>
+  </section>
+
+  <section class="panel" id="history-panel">
+    <h2>Run history</h2>
+    <div class="history-controls">
+      <label>Filter by status
+        <select id="history-status">
+          <option value="">All statuses</option>
+          <option value="queued">Queued</option>
+          <option value="running">Running</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="failed">Failed</option>
+          <option value="timed_out">Timed out</option>
+        </select>
+      </label>
+      <button id="refresh-history" type="button">Refresh history</button>
+    </div>
+    <p id="history-summary" class="muted" role="status" aria-live="polite">Loading run history…</p>
+    <ul id="history-list"></ul>
   </section>
 
   <section class="panel">
@@ -70,6 +93,11 @@
     const runSummary = document.getElementById("run-summary");
     const runLog = document.getElementById("run-log");
     const artifactList = document.getElementById("artifact-list");
+    const historyStatus = document.getElementById("history-status");
+    const historySummary = document.getElementById("history-summary");
+    const historyList = document.getElementById("history-list");
+    let activeRunId = null;
+    let activeRefreshToken = 0;
 
     async function loadWorkflows() {
       try {
@@ -89,34 +117,81 @@
       }
     }
 
-    async function refreshRun(runId) {
+    async function loadRunHistory() {
+      historySummary.textContent = "Loading run history…";
+      historyList.textContent = "";
+      const params = new URLSearchParams({ limit: "20", offset: "0" });
+      if (historyStatus.value) params.set("status", historyStatus.value);
+      try {
+        const response = await fetch("/api/v1/runs?" + params.toString());
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not load run history.");
+        historySummary.textContent = payload.total
+          ? "Showing " + payload.runs.length + " of " + payload.total + " runs."
+          : "No runs found for this filter.";
+        for (const run of payload.runs) {
+          const item = document.createElement("li");
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "history-run";
+          const createdAt = new Date(run.created_at).toLocaleString();
+          button.textContent = run.status + " · " + run.workflow_id + " · " +
+            createdAt + " · " + run.run_id;
+          button.setAttribute("aria-label", "Open " + run.status + " run " + run.run_id);
+          button.addEventListener("click", function () { openRun(run.run_id); });
+          item.appendChild(button);
+          historyList.appendChild(item);
+        }
+      } catch (error) {
+        historySummary.textContent = error.message;
+      }
+    }
+
+    async function refreshRun(runId, refreshToken) {
+      if (runId !== activeRunId || refreshToken !== activeRefreshToken) return;
       const [statusResponse, logsResponse, artifactsResponse] = await Promise.all([
         fetch("/api/v1/runs/" + runId),
         fetch("/api/v1/runs/" + runId + "/logs"),
         fetch("/api/v1/runs/" + runId + "/artifacts")
       ]);
+      if (runId !== activeRunId || refreshToken !== activeRefreshToken) return;
+      if (!statusResponse.ok) throw new Error("Could not load run status.");
       if (logsResponse.ok) {
         const payload = await logsResponse.json();
         runLog.textContent = payload.text || "Waiting for workflow output…";
       }
-      if (statusResponse.ok) {
-        const status = await statusResponse.json();
-        runSummary.textContent = "Run " + status.run_id + " · " + status.status +
-          (status.error_message ? " · " + status.error_message : "");
-        if (status.status === "succeeded" || status.status === "failed" || status.status === "timed_out") {
-          if (artifactsResponse.ok) {
-            const payload = await artifactsResponse.json();
-            artifactList.textContent = "";
-            for (const artifact of payload.artifacts) {
-              const item = document.createElement("li");
-              item.textContent = artifact.path + " · " + artifact.size_bytes + " bytes · SHA-256 " + artifact.sha256;
-              artifactList.appendChild(item);
-            }
+      const status = await statusResponse.json();
+      runSummary.textContent = "Run " + status.run_id + " · " + status.status +
+        (status.error_message ? " · " + status.error_message : "");
+      if (["succeeded", "failed", "timed_out"].includes(status.status)) {
+        if (artifactsResponse.ok) {
+          const payload = await artifactsResponse.json();
+          artifactList.textContent = "";
+          for (const artifact of payload.artifacts) {
+            const item = document.createElement("li");
+            item.textContent = artifact.path + " · " + artifact.size_bytes +
+              " bytes · SHA-256 " + artifact.sha256;
+            artifactList.appendChild(item);
           }
-          return;
         }
+        await loadRunHistory();
+        return;
       }
-      window.setTimeout(function () { refreshRun(runId).catch(showError); }, 1500);
+      window.setTimeout(function () {
+        if (runId === activeRunId && refreshToken === activeRefreshToken) {
+          refreshRun(runId, refreshToken).catch(showError);
+        }
+      }, 1500);
+    }
+
+    function openRun(runId) {
+      activeRunId = runId;
+      const refreshToken = ++activeRefreshToken;
+      runPanel.hidden = false;
+      runSummary.textContent = "Loading run " + runId + "…";
+      runLog.textContent = "Waiting for workflow output…";
+      artifactList.textContent = "";
+      refreshRun(runId, refreshToken).catch(showError);
     }
 
     function showError(error) {
@@ -140,14 +215,17 @@
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.detail || "Could not start workflow.");
-        runSummary.textContent = "Run " + payload.run_id + " · " + payload.status;
-        await refreshRun(payload.run_id);
+        openRun(payload.run_id);
+        await loadRunHistory();
       } catch (error) {
         showError(error);
       }
     });
 
+    document.getElementById("refresh-history").addEventListener("click", loadRunHistory);
+    historyStatus.addEventListener("change", loadRunHistory);
     loadWorkflows();
+    loadRunHistory();
   </script>
 </body>
 </html>

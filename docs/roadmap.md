@@ -57,7 +57,7 @@
 - [x] Add a paginated run-history API with status filtering; the existing detail endpoint exposes current run status.
 - [x] Expose logs and checksummed artifact metadata through dedicated endpoints.
 - [ ] Persist and expose submitted parameter snapshots and structured validation results.
-- [ ] Add a run-history UI after API contracts are stable.
+- [x] Add a run-history UI with status filtering and links into run details after the history API stabilized.
 - [ ] Add optional local model support only if it improves a measured use case.
 
 ## Public release gate for migrated scripts

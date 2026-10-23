@@ -76,6 +76,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `GET /healthz` — process health.
 - `GET /api/v1/workflows` — registered workflow metadata.
 - `POST /api/v1/runs` — validate and queue a registered workflow request.
+- `GET /api/v1/runs` — browse run history with pagination and status filtering.
 - `GET /api/v1/runs/{run_id}` — state and exit information.
 - `GET /api/v1/runs/{run_id}/logs` — bounded execution log.
 - `GET /api/v1/runs/{run_id}/artifacts` — relative artifact names, byte sizes, and SHA-256 checksums.

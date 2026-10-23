@@ -86,6 +86,13 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(succeeded.json()["runs"][0]["status"], "succeeded")
             self.assertEqual(invalid_status.status_code, 422)
 
+    def test_home_page_exposes_run_history_controls(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Run history", response.text)
+        self.assertIn('id="history-status"', response.text)
+        self.assertIn('id="refresh-history"', response.text)
+
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)
         self.assertEqual(response.status_code, 404)
