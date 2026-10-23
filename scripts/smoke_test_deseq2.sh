@@ -26,6 +26,23 @@ run_workflow() {
     --outdir "$output_path"
 }
 
+expect_failure() {
+  local label="$1"
+  local expected_message="$2"
+  local metadata_path="$3"
+  local counts_path="$4"
+  local log_path="$TMP_BASE/$label.log"
+
+  if run_workflow "$metadata_path" "$counts_path" "$TMP_BASE/$label-output" >"$log_path" 2>&1; then
+    echo "Expected invalid case '$label' to fail, but the workflow succeeded." >&2
+    exit 1
+  fi
+  grep -Fq "$expected_message" "$log_path" || {
+    echo "Invalid case '$label' did not produce the expected actionable error." >&2
+    exit 1
+  }
+}
+
 run_workflow "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts.csv" "$OUTPUT_DIR"
 
 for expected in \
@@ -40,43 +57,79 @@ do
   }
 done
 
-if grep -F "$TMP_BASE" "$OUTPUT_DIR/run_manifest.tsv"; then
+if grep -Fq "$TMP_BASE" "$OUTPUT_DIR/run_manifest.tsv"; then
   echo "Run manifest unexpectedly contains a local absolute path." >&2
   exit 1
 fi
 
-# Negative test 1: sample IDs must match exactly between counts and metadata.
+# Invalid metadata: sample IDs do not match the count matrix.
 Rscript -e '
 args <- commandArgs(trailingOnly = TRUE)
 metadata <- utils::read.csv(args[[1]], stringsAsFactors = FALSE)
 metadata$sample_id[[1]] <- "intentionally_missing_sample"
 utils::write.csv(metadata, args[[2]], row.names = FALSE, quote = FALSE)
 ' "$INPUT_DIR/metadata.csv" "$INPUT_DIR/metadata-mismatch.csv"
+expect_failure "mismatched-samples" "must match exactly" \
+  "$INPUT_DIR/metadata-mismatch.csv" "$INPUT_DIR/counts.csv"
 
-if run_workflow "$INPUT_DIR/metadata-mismatch.csv" "$INPUT_DIR/counts.csv" "$TMP_BASE/invalid-sample-output" >"$TMP_BASE/invalid-sample.log" 2>&1; then
-  echo "Expected mismatched sample IDs to fail, but the workflow succeeded." >&2
-  exit 1
-fi
-grep -q "must match exactly" "$TMP_BASE/invalid-sample.log" || {
-  echo "Mismatched-sample failure did not produce the expected actionable error." >&2
-  exit 1
-}
+# Invalid metadata: the selected condition column is missing.
+Rscript -e '
+args <- commandArgs(trailingOnly = TRUE)
+metadata <- utils::read.csv(args[[1]], stringsAsFactors = FALSE)
+metadata$condition <- NULL
+utils::write.csv(metadata, args[[2]], row.names = FALSE, quote = FALSE)
+' "$INPUT_DIR/metadata.csv" "$INPUT_DIR/metadata-missing-condition.csv"
+expect_failure "missing-condition" "Metadata CSV must include columns" \
+  "$INPUT_DIR/metadata-missing-condition.csv" "$INPUT_DIR/counts.csv"
 
-# Negative test 2: negative raw counts must be rejected.
+# Invalid counts: negative values.
 Rscript -e '
 args <- commandArgs(trailingOnly = TRUE)
 counts <- utils::read.csv(args[[1]], check.names = FALSE)
 counts[[2]][[1]] <- -1
 utils::write.csv(counts, args[[2]], row.names = FALSE, quote = FALSE)
 ' "$INPUT_DIR/counts.csv" "$INPUT_DIR/counts-negative.csv"
+expect_failure "negative-counts" "non-negative integers" \
+  "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-negative.csv"
 
-if run_workflow "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-negative.csv" "$TMP_BASE/invalid-count-output" >"$TMP_BASE/invalid-count.log" 2>&1; then
-  echo "Expected negative counts to fail, but the workflow succeeded." >&2
-  exit 1
-fi
-grep -q "non-negative integers" "$TMP_BASE/invalid-count.log" || {
-  echo "Negative-count failure did not produce the expected actionable error." >&2
-  exit 1
-}
+# Invalid counts: non-integer values.
+Rscript -e '
+args <- commandArgs(trailingOnly = TRUE)
+counts <- utils::read.csv(args[[1]], check.names = FALSE)
+counts[[2]][[1]] <- 1.5
+utils::write.csv(counts, args[[2]], row.names = FALSE, quote = FALSE)
+' "$INPUT_DIR/counts.csv" "$INPUT_DIR/counts-noninteger.csv"
+expect_failure "noninteger-counts" "non-negative integers" \
+  "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-noninteger.csv"
 
-echo "DESeq2 smoke test passed: valid input, expected artifacts, path-free manifest, and two negative cases."
+# Invalid counts: duplicate gene IDs.
+Rscript -e '
+args <- commandArgs(trailingOnly = TRUE)
+counts <- utils::read.csv(args[[1]], check.names = FALSE)
+counts$gene_id[[2]] <- counts$gene_id[[1]]
+utils::write.csv(counts, args[[2]], row.names = FALSE, quote = FALSE)
+' "$INPUT_DIR/counts.csv" "$INPUT_DIR/counts-duplicate-gene.csv"
+expect_failure "duplicate-gene-ids" "unique, non-empty gene IDs" \
+  "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-duplicate-gene.csv"
+
+# Invalid metadata: one group has fewer than two replicates.
+Rscript -e '
+args <- commandArgs(trailingOnly = TRUE)
+metadata <- utils::read.csv(args[[1]], stringsAsFactors = FALSE)
+metadata$condition <- c("control", rep("treatment", nrow(metadata) - 1L))
+utils::write.csv(metadata, args[[2]], row.names = FALSE, quote = FALSE)
+' "$INPUT_DIR/metadata.csv" "$INPUT_DIR/metadata-low-replicate.csv"
+expect_failure "low-replicate-count" "At least two samples per condition" \
+  "$INPUT_DIR/metadata-low-replicate.csv" "$INPUT_DIR/counts.csv"
+
+# Invalid counts: values outside R's integer storage range.
+Rscript -e '
+args <- commandArgs(trailingOnly = TRUE)
+counts <- utils::read.csv(args[[1]], check.names = FALSE)
+counts[[2]][[1]] <- .Machine$integer.max + 1000
+utils::write.csv(counts, args[[2]], row.names = FALSE, quote = FALSE)
+' "$INPUT_DIR/counts.csv" "$INPUT_DIR/counts-overflow.csv"
+expect_failure "integer-overflow" "supported integer range" \
+  "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-overflow.csv"
+
+echo "DESeq2 smoke test passed: valid input, expected artifacts, path-free manifest, and six invalid-input cases."
