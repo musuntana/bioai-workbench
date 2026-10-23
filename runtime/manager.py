@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import selectors
 import shutil
@@ -27,6 +28,8 @@ EXPECTED_DESEQ2_OUTPUTS = (
     "run_manifest.tsv",
     "session_info.txt",
 )
+MAX_RUN_FAMILY_ATTEMPTS = 5
+_TERMINAL_STATUSES = {"succeeded", "failed", "timed_out"}
 
 
 class RunManager:
@@ -49,7 +52,121 @@ class RunManager:
             parameters=request.model_dump(exclude={"workflow_id"}),
         )
 
-    def execute(self, run_id: str, request_data: dict[str, Any]) -> None:
+    def create_rerun(self, source_run_id: str) -> dict[str, Any]:
+        """Create a bounded rerun from a terminal run's hash-verified snapshots."""
+        source_record, request, _ = self._validated_rerun_source(source_run_id)
+        root_run_id = source_record.get("root_run_id") or source_run_id
+        try:
+            return self.store.create(
+                uuid4().hex,
+                request.workflow_id,
+                parameters=request.model_dump(exclude={"workflow_id"}),
+                parent_run_id=source_run_id,
+                root_run_id=root_run_id,
+                max_family_attempts=MAX_RUN_FAMILY_ATTEMPTS,
+            )
+        except ValueError as exc:
+            if "maximum number of attempts" in str(exc):
+                raise ValueError(
+                    f"This run lineage is limited to {MAX_RUN_FAMILY_ATTEMPTS} total attempts."
+                ) from exc
+            raise
+
+    def _validated_rerun_source(
+        self, source_run_id: str
+    ) -> tuple[dict[str, Any], RunRequest, dict[str, Path]]:
+        """Check terminal state and verify every immutable snapshot against recorded hashes."""
+        try:
+            record = self.store.get(source_run_id)
+        except ValueError as exc:
+            raise FileNotFoundError("Run not found.") from exc
+        if record is None:
+            raise FileNotFoundError("Run not found.")
+        if record.get("status") not in _TERMINAL_STATUSES:
+            raise ValueError("Only completed runs can be rerun.")
+        environment_provenance = record.get("environment_provenance")
+        input_provenance = record.get("input_provenance")
+        if not isinstance(environment_provenance, dict) or not isinstance(input_provenance, dict):
+            raise ValueError("This run has no verified immutable snapshots and cannot be rerun.")
+        workflow_hash = environment_provenance.get("workflow_sha256")
+        if not isinstance(workflow_hash, str) or len(workflow_hash) != 64:
+            raise ValueError("This run has no verified immutable snapshots and cannot be rerun.")
+
+        expected_hashes: dict[str, str] = {"workflow.R": workflow_hash}
+        for role in ("counts", "metadata"):
+            details = input_provenance.get(role)
+            digest = details.get("sha256") if isinstance(details, dict) else None
+            if not isinstance(digest, str) or len(digest) != 64:
+                raise ValueError("This run has no verified immutable snapshots and cannot be rerun.")
+            expected_hashes[f"{role}.csv"] = digest
+
+        snapshots = {
+            name: self._verified_snapshot_path(source_run_id, name, expected_hash)
+            for name, expected_hash in expected_hashes.items()
+        }
+        try:
+            request = RunRequest.model_validate(
+                {"workflow_id": record["workflow_id"], **record["parameters"]}
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Run parameters cannot be revalidated; this run cannot be rerun.") from exc
+        return record, request, snapshots
+
+    def _verified_snapshot_path(self, run_id: str, filename: str, expected_sha256: str) -> Path:
+        """Resolve a fixed-name snapshot within a run and confirm its recorded digest."""
+        try:
+            run_dir = self.store.run_dir(run_id)
+            if run_dir.is_symlink():
+                raise ValueError
+            resolved_run = run_dir.resolve(strict=True)
+            if not resolved_run.is_relative_to(self.store.root):
+                raise ValueError
+            tmp_dir = resolved_run / "tmp"
+            if tmp_dir.is_symlink():
+                raise ValueError
+            resolved_tmp = tmp_dir.resolve(strict=True)
+            if not resolved_tmp.is_relative_to(resolved_run):
+                raise ValueError
+            candidate = resolved_tmp / filename
+            if candidate.is_symlink():
+                raise ValueError
+            snapshot = candidate.resolve(strict=True)
+            if not snapshot.is_relative_to(resolved_tmp) or not snapshot.is_file():
+                raise ValueError
+            digest = _sha256_file(snapshot)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise ValueError(
+                "This run has no valid immutable snapshots and cannot be rerun."
+            ) from exc
+        if not _constant_time_digest_match(digest, expected_sha256):
+            raise ValueError("A recorded snapshot checksum does not match; this run cannot be rerun.")
+        return snapshot
+
+    @staticmethod
+    def _copy_snapshot(source: Path, destination: Path, expected_sha256: str) -> str:
+        """Copy a verified snapshot into a new run while checking the bytes being copied."""
+        digest = hashlib.sha256()
+        try:
+            with source.open("rb") as input_stream, destination.open("xb") as output_stream:
+                while chunk := input_stream.read(1024 * 1024):
+                    digest.update(chunk)
+                    output_stream.write(chunk)
+        except OSError as exc:
+            destination.unlink(missing_ok=True)
+            raise ValueError("A required immutable snapshot could not be copied.") from exc
+        actual_sha256 = digest.hexdigest()
+        if not _constant_time_digest_match(actual_sha256, expected_sha256):
+            destination.unlink(missing_ok=True)
+            raise ValueError("A recorded snapshot checksum does not match; this run cannot be rerun.")
+        return actual_sha256
+
+    def execute(
+        self,
+        run_id: str,
+        request_data: dict[str, Any],
+        *,
+        source_run_id: str | None = None,
+    ) -> None:
         """Execute a previously queued request. Safe to pass as a background task."""
         run_dir = self.store.run_dir(run_id)
         log_path = run_dir / "run.log"
@@ -63,39 +180,67 @@ class RunManager:
             workflow = get_workflow(request.workflow_id)
             if workflow is None:
                 raise ValueError("Workflow is not registered.")
-            if not workflow.entrypoint.is_file():
-                raise RuntimeError("The registered workflow entrypoint is missing.")
-
-            # Run a private script copy: the provenance hash must identify
-            # exactly the script bytes submitted to Rscript.
             workflow_snapshot = tmp_dir / "workflow.R"
-            digest = hashlib.sha256()
-            with workflow.entrypoint.open("rb") as source, workflow_snapshot.open("xb") as target:
-                while chunk := source.read(1024 * 1024):
-                    target.write(chunk)
-                    digest.update(chunk)
-            workflow_hash = digest.hexdigest()
-            self.store.update(
-                run_id, environment_provenance={"workflow_sha256": workflow_hash}
-            )
-            counts_path = self._resolve_input(request.counts_file)
-            metadata_path = self._resolve_input(request.metadata_file)
-            # Freeze the bytes consumed by R, not merely a mutable input filename.
             snapshots: dict[str, Path] = {}
             provenance: dict[str, dict[str, Any]] = {}
-            for role, path in (("counts", counts_path), ("metadata", metadata_path)):
-                snapshot = tmp_dir / f"{role}.csv"
+
+            if source_run_id is not None:
+                source_record, source_request, source_snapshots = self._validated_rerun_source(
+                    source_run_id
+                )
+                if (
+                    source_record.get("workflow_id") != request.workflow_id
+                    or source_request.model_dump() != request.model_dump()
+                ):
+                    raise ValueError("Rerun parameters do not match the source run.")
+                source_environment = source_record["environment_provenance"]
+                workflow_hash = self._copy_snapshot(
+                    source_snapshots["workflow.R"],
+                    workflow_snapshot,
+                    source_environment["workflow_sha256"],
+                )
+                for role in ("counts", "metadata"):
+                    source_details = source_record["input_provenance"][role]
+                    snapshot = tmp_dir / f"{role}.csv"
+                    self._copy_snapshot(
+                        source_snapshots[f"{role}.csv"],
+                        snapshot,
+                        source_details["sha256"],
+                    )
+                    snapshots[role] = snapshot
+                    provenance[role] = dict(source_details)
+            else:
+                if not workflow.entrypoint.is_file():
+                    raise RuntimeError("The registered workflow entrypoint is missing.")
+
+                # Run a private script copy: the provenance hash identifies
+                # exactly the script bytes submitted to Rscript.
                 digest = hashlib.sha256()
-                with path.open("rb") as source, snapshot.open("xb") as target:
+                with workflow.entrypoint.open("rb") as source, workflow_snapshot.open("xb") as target:
                     while chunk := source.read(1024 * 1024):
                         target.write(chunk)
                         digest.update(chunk)
-                snapshots[role] = snapshot
-                provenance[role] = {
-                    "filename": request.counts_file if role == "counts" else request.metadata_file,
-                    "sha256": digest.hexdigest(),
-                    "size_bytes": snapshot.stat().st_size,
-                }
+                workflow_hash = digest.hexdigest()
+                counts_path = self._resolve_input(request.counts_file)
+                metadata_path = self._resolve_input(request.metadata_file)
+                # Freeze the bytes consumed by R, not merely a mutable input filename.
+                for role, path in (("counts", counts_path), ("metadata", metadata_path)):
+                    snapshot = tmp_dir / f"{role}.csv"
+                    digest = hashlib.sha256()
+                    with path.open("rb") as source, snapshot.open("xb") as target:
+                        while chunk := source.read(1024 * 1024):
+                            target.write(chunk)
+                            digest.update(chunk)
+                    snapshots[role] = snapshot
+                    provenance[role] = {
+                        "filename": request.counts_file if role == "counts" else request.metadata_file,
+                        "sha256": digest.hexdigest(),
+                        "size_bytes": snapshot.stat().st_size,
+                    }
+
+            self.store.update(
+                run_id, environment_provenance={"workflow_sha256": workflow_hash}
+            )
             self.store.update(run_id, input_provenance=provenance)
             rscript = self._find_rscript()
             command = [
@@ -246,6 +391,18 @@ class RunManager:
         environment.setdefault("LANG", "C.UTF-8")
         environment.setdefault("LC_ALL", "C.UTF-8")
         return environment
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _constant_time_digest_match(actual: str, expected: str) -> bool:
+    return hmac.compare_digest(actual, expected)
 
 
 def _public_error_message(exc: Exception) -> str:

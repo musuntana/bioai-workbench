@@ -76,6 +76,8 @@ class RunAccepted(BaseModel):
     status: str
     created_at: str
     status_url: str
+    parent_run_id: str | None = None
+    attempt: int = Field(default=1, ge=1)
 
 
 RunState = Literal["queued", "running", "succeeded", "failed", "timed_out"]
@@ -94,6 +96,9 @@ class RunStatus(BaseModel):
     error_message: str | None = None
     artifact_count: int = 0
     log_truncated: bool = False
+    parent_run_id: str | None = None
+    root_run_id: str | None = None
+    attempt: int = Field(default=1, ge=1)
     input_provenance: dict[str, dict[str, object]] = Field(default_factory=dict)
     environment_provenance: dict[str, str] = Field(default_factory=dict)
 

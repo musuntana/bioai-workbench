@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import tempfile
 import unittest
@@ -56,6 +57,55 @@ class WorkbenchApiTests(unittest.TestCase):
         )
         return manager, result_file
 
+    def _create_rerunnable_run(
+        self, root: Path, run_id: str, status: str = "succeeded"
+    ) -> RunManager:
+        manager = RunManager(
+            config=RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+        )
+        request = {
+            "counts_file": "counts.csv",
+            "metadata_file": "metadata.csv",
+            "condition": "condition",
+            "reference": "control",
+            "contrast": "treatment",
+            "alpha": 0.05,
+        }
+        manager.store.create(run_id, "deseq2-basic", parameters=request)
+        run_dir = manager.store.run_dir(run_id)
+        tmp_dir = run_dir / "tmp"
+        tmp_dir.mkdir()
+        snapshots = {
+            "workflow.R": b"# synthetic workflow snapshot\n",
+            "counts.csv": b"gene_id,s1,s2,s3,s4\ng1,1,2,3,4\n",
+            "metadata.csv": b"sample_id,condition\ns1,control\ns2,control\ns3,treatment\ns4,treatment\n",
+        }
+        for name, content in snapshots.items():
+            (tmp_dir / name).write_bytes(content)
+        input_provenance = {
+            role: {
+                "filename": request[f"{role}_file"],
+                "sha256": hashlib.sha256(snapshots[f"{role}.csv"]).hexdigest(),
+                "size_bytes": len(snapshots[f"{role}.csv"]),
+            }
+            for role in ("counts", "metadata")
+        }
+        manager.store.update(
+            run_id,
+            status=status,
+            finished_at="2026-10-23T00:00:00+00:00" if status in {"succeeded", "failed", "timed_out"} else None,
+            exit_code=0 if status == "succeeded" else (1 if status == "failed" else None),
+            input_provenance=input_provenance,
+            environment_provenance={
+                "workflow_sha256": hashlib.sha256(snapshots["workflow.R"]).hexdigest()
+            },
+        )
+        return manager
+
     def test_health_endpoint(self) -> None:
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)
@@ -99,6 +149,49 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn(
             "shell_command", {item["field"] for item in unknown_error["details"]}
         )
+
+
+    def test_rerun_endpoint_queues_a_new_attempt_with_parent_lineage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_id = "e" * 32
+            manager = self._create_rerunnable_run(root, source_id)
+            with patch("app.main.run_manager", manager), patch.object(manager, "execute") as execute:
+                response = self.client.post(f"/api/v1/runs/{source_id}/rerun")
+
+            self.assertEqual(response.status_code, 202)
+            payload = response.json()
+            self.assertEqual(payload["parent_run_id"], source_id)
+            self.assertEqual(payload["attempt"], 2)
+            record = manager.store.get(payload["run_id"])
+            self.assertEqual(record["status"], "queued")
+            self.assertEqual(record["parent_run_id"], source_id)
+            self.assertEqual(record["root_run_id"], source_id)
+            self.assertEqual(record["attempt"], 2)
+            self.assertEqual(record["parameters"]["counts_file"], "counts.csv")
+            execute.assert_called_once()
+            self.assertEqual(execute.call_args.kwargs["source_run_id"], source_id)
+
+    def test_rerun_endpoint_rejects_runs_without_verified_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = RunManager(
+                config=RuntimeConfig(
+                    project_root=PROJECT_ROOT,
+                    input_root=Path(temp_dir) / "inputs",
+                    runs_root=Path(temp_dir) / "runs",
+                )
+            )
+            run_id = "f" * 32
+            manager.store.create(run_id, "deseq2-basic")
+            manager.store.update(run_id, status="succeeded")
+            with patch("app.main.run_manager", manager):
+                response = self.client.post(f"/api/v1/runs/{run_id}/rerun")
+            self.assertEqual(response.status_code, 409)
+            self.assertIn("snapshots", response.json()["detail"].lower())
+
+    def test_rerun_endpoint_returns_not_found_for_unknown_run(self) -> None:
+        response = self.client.post("/api/v1/runs/" + "a" * 32 + "/rerun")
+        self.assertEqual(response.status_code, 404)
 
     def test_run_history_supports_pagination_and_status_filter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -149,6 +242,8 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn("Run history", response.text)
         self.assertIn('id="history-status"', response.text)
         self.assertIn('id="refresh-history"', response.text)
+        self.assertIn('id="rerun-run"', response.text)
+        self.assertIn('/rerun', response.text)
 
     def test_artifact_download_serves_only_manifested_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -142,6 +142,10 @@
   <section id="run-panel" class="panel" hidden>
     <h2>Run status</h2>
     <p id="run-summary" role="status">Submitting…</p>
+    <div class="history-controls">
+      <button id="rerun-run" type="button" hidden disabled>Re-run exact snapshot</button>
+      <p id="rerun-summary" class="muted" role="status" aria-live="polite"></p>
+    </div>
     <h3>Runtime provenance</h3>
     <pre id="run-environment">Not recorded yet.</pre>
     <h3>Artifacts</h3>
@@ -364,7 +368,8 @@
           button.type = "button";
           button.className = "history-run";
           const createdAt = new Date(run.created_at).toLocaleString();
-          button.textContent = run.status + " · " + run.workflow_id + " · " +
+          const attemptLabel = run.parent_run_id ? " · attempt " + (run.attempt || 2) : "";
+          button.textContent = run.status + attemptLabel + " · " + run.workflow_id + " · " +
             createdAt + " · " + run.run_id;
           button.setAttribute("aria-label", "Open " + run.status + " run " + run.run_id);
           button.addEventListener("click", function () { openRun(run.run_id); });
@@ -815,6 +820,51 @@
       }
     });
 
+    const rerunButton = document.getElementById("rerun-run");
+    const rerunSummary = document.getElementById("rerun-summary");
+
+    function updateRerunControl(status) {
+      const terminal = ["succeeded", "failed", "timed_out"].includes(status.status);
+      const attempts = Number(status.attempt || 1);
+      const inputProvenance = status.input_provenance || {};
+      const environmentProvenance = status.environment_provenance || {};
+      const hasSnapshots = Boolean(
+        inputProvenance.counts && inputProvenance.counts.sha256 &&
+        inputProvenance.metadata && inputProvenance.metadata.sha256 &&
+        environmentProvenance.workflow_sha256
+      );
+      rerunButton.hidden = !terminal;
+      rerunButton.disabled = !hasSnapshots || attempts >= 5;
+      rerunSummary.textContent = status.parent_run_id
+        ? "Attempt " + attempts + " · rerun of " + status.parent_run_id
+        : "Original run · attempt " + attempts;
+      if (terminal && !hasSnapshots) {
+        rerunSummary.textContent += " · verified snapshots unavailable; exact rerun is not possible.";
+      } else if (attempts >= 5) {
+        rerunSummary.textContent += " · maximum five attempts in this lineage reached.";
+      }
+    }
+
+    rerunButton.addEventListener("click", async function () {
+      const sourceRunId = activeRunId;
+      if (!sourceRunId || rerunButton.disabled) return;
+      rerunButton.disabled = true;
+      rerunSummary.textContent = "Creating a new run from verified snapshots…";
+      try {
+        const response = await fetch(
+          "/api/v1/runs/" + encodeURIComponent(sourceRunId) + "/rerun",
+          { method: "POST" }
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not rerun this workflow.");
+        await loadRunHistory();
+        openRun(payload.run_id);
+      } catch (error) {
+        rerunSummary.textContent = "Rerun not started: " + error.message;
+        rerunButton.disabled = false;
+      }
+    });
+
     async function refreshRun(runId, refreshToken) {
       if (runId !== activeRunId || refreshToken !== activeRefreshToken) return;
       const [statusResponse, logsResponse, artifactsResponse] = await Promise.all([
@@ -829,6 +879,7 @@
         runLog.textContent = payload.text || "Waiting for workflow output…";
       }
       const status = await statusResponse.json();
+      updateRerunControl(status);
       const versions = status.environment_provenance || {};
       document.getElementById("run-environment").textContent = Object.keys(versions).length
         ? Object.keys(versions).sort().map(key => key + ": " + versions[key]).join("\n")
@@ -880,6 +931,9 @@
       const refreshToken = ++activeRefreshToken;
       runPanel.hidden = false;
       runSummary.textContent = "Loading run " + runId + "…";
+      rerunButton.hidden = true;
+      rerunButton.disabled = true;
+      rerunSummary.textContent = "";
       runLog.textContent = "Waiting for workflow output…";
       artifactList.textContent = "";
       resultsPanel.hidden = true;

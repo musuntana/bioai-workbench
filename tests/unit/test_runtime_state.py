@@ -84,6 +84,29 @@ class RunStoreTests(unittest.TestCase):
                 with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                     store.list_runs(**kwargs)
 
+    def test_run_lineage_counts_attempts_and_enforces_family_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RunStore(Path(temp_dir))
+            root_id = "a" * 32
+            store.create(root_id, "deseq2-basic")
+            second = store.create(
+                "b" * 32,
+                "deseq2-basic",
+                parent_run_id=root_id,
+                root_run_id=root_id,
+                max_family_attempts=2,
+            )
+            self.assertEqual(second["attempt"], 2)
+            self.assertEqual(store.count_runs_in_family(root_id), 2)
+            with self.assertRaisesRegex(ValueError, "maximum number of attempts"):
+                store.create(
+                    "c" * 32,
+                    "deseq2-basic",
+                    parent_run_id=root_id,
+                    root_run_id=root_id,
+                    max_family_attempts=2,
+                )
+
     def test_invalid_run_id_and_unknown_state_fields_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store = RunStore(Path(temp_dir))
