@@ -51,6 +51,7 @@ class RunStore:
             "error_message": None,
             "artifact_count": 0,
             "log_truncated": False,
+            "input_provenance": {},
         }
         with self._lock:
             run_dir = self._run_dir(run_id)
@@ -125,6 +126,7 @@ class RunStore:
             "error_message",
             "artifact_count",
             "log_truncated",
+            "input_provenance",
         }
         unknown = set(changes) - allowed
         if unknown:
