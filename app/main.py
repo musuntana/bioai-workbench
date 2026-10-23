@@ -392,7 +392,7 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                 "message": "Metadata CSV could not be parsed as a UTF-8 table.",
             })
 
-    if counts_path is not None and metadata_path is not None and counts_valid and metadata_valid:
+    if counts_path is not None and metadata_path is not None and counts_samples and metadata_samples and metadata_valid:
         if set(counts_samples) != set(metadata_samples) or len(counts_samples) != len(metadata_samples):
             errors.append({
                 "field": "metadata_file",
