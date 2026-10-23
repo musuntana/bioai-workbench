@@ -77,6 +77,9 @@
     </div>
     <p id="history-summary" class="muted" role="status" aria-live="polite">Loading run history…</p>
     <ul id="history-list"></ul>
+    <p class="muted">Select exactly two runs to compare saved parameters and output checksums.</p>
+    <button id="compare-history" type="button">Compare selected runs</button>
+    <pre id="comparison-summary" role="status" aria-live="polite">No comparison selected.</pre>
   </section>
 
   <section class="panel">
@@ -220,6 +223,44 @@
     const historyStatus = document.getElementById("history-status");
     const historySummary = document.getElementById("history-summary");
     const historyList = document.getElementById("history-list");
+    const compareSelection = new Set();
+    const comparisonSummary = document.getElementById("comparison-summary");
+    document.getElementById("compare-history").addEventListener("click", async function () {
+      if (compareSelection.size !== 2) {
+        comparisonSummary.textContent = "Select exactly two runs.";
+        return;
+      }
+      comparisonSummary.textContent = "Comparing runs…";
+      try {
+        const [runA, runB] = [...compareSelection];
+        const query = new URLSearchParams({ run_a: runA, run_b: runB });
+        const response = await fetch("/api/v1/runs/compare?" + query.toString());
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Comparison failed.");
+        const lines = [
+          "Run A: " + runA,
+          "Run B: " + runB,
+          "Same workflow: " + payload.same_workflow,
+          "Changed parameters:"
+        ];
+        for (const change of payload.changed_parameters) {
+          lines.push("  " + change.field + ": " + JSON.stringify(change.run_a) +
+            " → " + JSON.stringify(change.run_b));
+        }
+        if (!payload.changed_parameters.length) lines.push("  None recorded.");
+        lines.push("Artifact checksum comparison:");
+        for (const artifact of payload.artifacts) {
+          lines.push("  " + artifact.path + ": " + (
+            artifact.same_checksum === null ? "only available in one run" :
+            artifact.same_checksum ? "same checksum" : "different checksums"));
+        }
+        if (!payload.artifacts.length) lines.push("  No manifested artifacts.");
+        lines.push("Limitations: " + payload.limitations);
+        comparisonSummary.textContent = lines.join("\n");
+      } catch (error) {
+        comparisonSummary.textContent = error.message;
+      }
+    });
     let activeRunId = null;
     let activeRefreshToken = 0;
     let activeResultsRunId = null;
@@ -259,8 +300,29 @@
         historySummary.textContent = payload.total
           ? "Showing " + payload.runs.length + " of " + payload.total + " runs."
           : "No runs found for this filter.";
+        const visibleIds = new Set(payload.runs.map(run => run.run_id));
+        for (const selected of compareSelection) {
+          if (!visibleIds.has(selected)) compareSelection.delete(selected);
+        }
         for (const run of payload.runs) {
           const item = document.createElement("li");
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = compareSelection.has(run.run_id);
+          checkbox.setAttribute("aria-label", "Select run " + run.run_id + " for comparison");
+          checkbox.addEventListener("change", function () {
+            if (checkbox.checked) {
+              if (compareSelection.size >= 2) {
+                checkbox.checked = false;
+                comparisonSummary.textContent = "Only two runs can be compared.";
+                return;
+              }
+              compareSelection.add(run.run_id);
+            } else {
+              compareSelection.delete(run.run_id);
+            }
+          });
+          item.appendChild(checkbox);
           const button = document.createElement("button");
           button.type = "button";
           button.className = "history-run";
