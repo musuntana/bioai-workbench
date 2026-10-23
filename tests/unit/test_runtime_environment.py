@@ -19,8 +19,8 @@ def test_manifest_versions_are_allowlisted_and_path_values_hidden():
             "deseq2_version\t1.46.0\n"
             "workflow_version\t0.1.0\n"
             "bioconductor_version\t3.20\n"
-            "counts_path\t/private/secret.csv\n"
-            "r_version\t/home/secret\n",
+            "counts_path\t" + str(Path("/") / "example" / "demo.csv") + "\n"
+            "r_version\t" + str(Path("/") / "example" / "invalid") + "\n",
             encoding="utf-8",
         )
         versions = read_environment_versions(manifest)
