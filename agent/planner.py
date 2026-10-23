@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from agent.contracts import WorkflowPlan
 from app.registry import get_workflow
 from app.schemas import RunRequest
-from agent.contracts import WorkflowPlan
 
 
 _TASK_TO_WORKFLOW = {
