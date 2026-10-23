@@ -41,6 +41,7 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
             "created_at": record.get("created_at"),
             "parameters": record.get("parameters") or {},
             "artifact_hashes": hashes,
+            "input_provenance": record.get("input_provenance") or {},
         })
 
     first, second = runs
@@ -50,6 +51,18 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
         for key in sorted(set(parameters_a) | set(parameters_b))
         if parameters_a.get(key) != parameters_b.get(key)
     ]
+    input_comparison = {}
+    for role in ("counts", "metadata"):
+        a = first["input_provenance"].get(role, {})
+        b = second["input_provenance"].get(role, {})
+        hash_a, hash_b = a.get("sha256"), b.get("sha256")
+        valid_a = isinstance(hash_a, str) and re.fullmatch(r"[0-9a-f]{64}", hash_a)
+        valid_b = isinstance(hash_b, str) and re.fullmatch(r"[0-9a-f]{64}", hash_b)
+        input_comparison[role] = {
+            "run_a_sha256": hash_a if valid_a else None,
+            "run_b_sha256": hash_b if valid_b else None,
+            "same_content": hash_a == hash_b if valid_a and valid_b else None,
+        }
     hashes_a, hashes_b = first["artifact_hashes"], second["artifact_hashes"]
     changed_artifacts = [
         {
@@ -65,9 +78,10 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
         "runs": runs,
         "same_workflow": first["workflow_id"] == second["workflow_id"],
         "changed_parameters": changed_parameters,
+        "inputs": input_comparison,
         "artifacts": changed_artifacts,
         "limitations": (
-            "Input filenames and recorded parameters are not input content hashes. "
+            "Older runs may lack input hashes. Frozen input hashes document bytes passed to R, "
             "Matching output manifest hashes do not prove identical environments. "
             "Artifacts are not rehashed by this comparison; use verified downloads to check integrity."
         ),
