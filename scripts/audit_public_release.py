@@ -19,7 +19,7 @@ TEXT_SUFFIXES = {
 }
 EXCLUDED_DIRS = {
     ".git", ".venv", "venv", "renv", "__pycache__", ".pytest_cache",
-    "results", "artifacts", "runs",
+    "results", "runs",
 }
 SENSITIVE_DIRS = {"data/raw", "data/private", "data/identifiable"}
 
