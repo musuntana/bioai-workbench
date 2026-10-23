@@ -81,7 +81,7 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
         "inputs": input_comparison,
         "artifacts": changed_artifacts,
         "limitations": (
-            "Older runs may lack input hashes. Frozen input hashes document bytes passed to R, "
+            "Older runs may lack input hashes. Frozen input hashes document bytes passed to R. "
             "Matching output manifest hashes do not prove identical environments. "
             "Artifacts are not rehashed by this comparison; use verified downloads to check integrity."
         ),
