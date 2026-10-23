@@ -40,9 +40,9 @@
 - [x] Upload local CSV inputs through the UI/API without requiring manual filesystem placement.
 - [x] List available CSVs using relative paths and sizes; select counts and metadata inputs from the UI.
 - [x] Enforce upload size, safe filename, UTF-8/CSV structure, and no-overwrite rules.
-- [ ] Validate uploaded files against the role-specific counts/metadata schemas before a run is submitted.
+- [x] Validate counts/metadata headers, sample IDs, count values, selected condition levels, and replicate counts before a run is submitted.
 
-**Exit gate:** users can upload, select, and submit synthetic inputs through the UI; malformed and oversized uploads are rejected, and existing files are not silently replaced.
+**Exit gate:** users can upload, select, validate, and submit synthetic inputs through the UI; malformed and oversized uploads are rejected, and existing files are not silently replaced.
 
 ## M2 — Workflow orchestration
 

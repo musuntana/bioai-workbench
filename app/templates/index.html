@@ -91,7 +91,12 @@
       <label>Adjusted p-value threshold (alpha)
         <input name="alpha" type="number" min="0.000001" max="0.999999" step="any" value="0.05" required>
       </label>
-      <div class="wide"><button type="submit">Start workflow</button></div>
+      <div class="wide">
+        <p id="input-validation-summary" class="muted" role="status" aria-live="polite">Validate inputs before starting a run.</p>
+        <ul id="input-validation-errors"></ul>
+        <button id="validate-inputs" type="button">Validate inputs</button>
+        <button type="submit">Start workflow</button>
+      </div>
     </form>
   </section>
 
@@ -290,6 +295,60 @@
       runSummary.textContent = "Error: " + error.message;
     }
 
+
+    const validationSummary = document.getElementById("input-validation-summary");
+    const validationErrors = document.getElementById("input-validation-errors");
+
+    function currentRunRequest() {
+      const form = document.getElementById("run-form");
+      const body = Object.fromEntries(new FormData(form).entries());
+      body.workflow_id = "deseq2-basic";
+      body.alpha = Number(body.alpha);
+      return body;
+    }
+
+    function renderValidationResult(result) {
+      validationErrors.textContent = "";
+      if (result.valid) {
+        const summary = result.summary;
+        const conditionCounts = Object.entries(summary.condition_counts || {})
+          .map(([name, count]) => name + ": " + count).join(", ");
+        validationSummary.textContent = "Inputs valid · " + summary.gene_count +
+          " genes · " + summary.sample_count + " count columns · " +
+          summary.metadata_sample_count + " metadata samples" +
+          (conditionCounts ? " · " + conditionCounts : "");
+        return;
+      }
+      validationSummary.textContent = "Input validation found " + result.errors.length + " issue(s).";
+      for (const error of result.errors) {
+        const item = document.createElement("li");
+        item.textContent = error.field + ": " + error.message;
+        validationErrors.appendChild(item);
+      }
+    }
+
+    async function validateCurrentInputs() {
+      validationSummary.textContent = "Validating counts and metadata…";
+      validationErrors.textContent = "";
+      const response = await fetch("/api/v1/inputs/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentRunRequest())
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Could not validate inputs.");
+      renderValidationResult(payload);
+      return payload.valid;
+    }
+
+    document.getElementById("validate-inputs").addEventListener("click", async function () {
+      try {
+        await validateCurrentInputs();
+      } catch (error) {
+        validationSummary.textContent = error.message;
+      }
+    });
+
     document.getElementById("run-form").addEventListener("submit", async function (event) {
       event.preventDefault();
       runPanel.hidden = false;
@@ -297,6 +356,14 @@
       runLog.textContent = "Waiting for workflow output…";
       artifactList.textContent = "";
       const form = new FormData(event.currentTarget);
+      let inputsValid = false;
+      try {
+        inputsValid = await validateCurrentInputs();
+      } catch (error) {
+        validationSummary.textContent = error.message;
+        return;
+      }
+      if (!inputsValid) return;
       const body = Object.fromEntries(form.entries());
       body.alpha = Number(body.alpha);
       try {
