@@ -34,7 +34,7 @@ def test_compares_parameters_and_checksums():
             {"field": "alpha", "run_a": 0.05, "run_b": 0.01}
         ]
         assert payload["artifacts"][0]["same_checksum"] is False
-        assert "not input content hashes" in payload["limitations"]
+        assert "Older runs may lack input hashes" in payload["limitations"]
 
 
 @pytest.mark.parametrize("run_a,run_b,status", [
