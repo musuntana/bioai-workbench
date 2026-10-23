@@ -48,7 +48,8 @@
 
 - [ ] Wrap the workflow in Snakemake after M1 is stable.
 - [ ] Record task state, exit status, logs, and artifact checksums.
-- [ ] Add bounded retries and safe resume behavior where supported.
+- [x] Add manual reruns from hash-verified immutable input/workflow snapshots, with parent lineage and a five-attempt family limit.
+- [ ] Add bounded automatic retries and safe resume behavior where supported.
 - [ ] Verify that reruns do not silently reuse incompatible artifacts.
 
 **Exit gate:** successful and failed runs are observable and reproducible from documented inputs.

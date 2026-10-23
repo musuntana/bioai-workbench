@@ -53,7 +53,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Use `demo/counts.csv` and `demo/metadata.csv`, then confirm the condition column, reference, and contrast.
 
-The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network. After a successful run, the workbench displays the gene table, volcano plot, and MA plot. Search/sort/filter controls operate on the verified result artifact; the original CSV remains downloadable.
+The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network. Terminal runs can be rerun from their immutable, SHA-256-verified input and workflow snapshots; reruns do not silently pick up changed files from the input directory. After a successful run, the workbench displays the gene table, volcano plot, and MA plot. Search/sort/filter controls operate on the verified result artifact; the original CSV remains downloadable.
 
 ### CLI compatibility
 
@@ -80,6 +80,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `PUT /api/v1/inputs/{filename}` — upload a validated UTF-8 CSV (25 MiB limit); existing files are never overwritten.
 - `POST /api/v1/inputs/validate` — preflight-check DESeq2 counts/metadata schemas, sample IDs, count values, and condition replication before a run.
 - `POST /api/v1/runs` — validate and queue a registered workflow request.
+- `POST /api/v1/runs/{run_id}/rerun` — rerun a terminal run from its verified input/workflow snapshots, recording lineage and enforcing a five-attempt family cap.
 - `GET /api/v1/runs` — browse run history with pagination and status filtering.
 - `GET /api/v1/runs/{run_id}` — state and exit information.
 - `GET /api/v1/runs/{run_id}/logs` — bounded execution log.

@@ -56,6 +56,17 @@ curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
 The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter; selecting a record opens its current status, logs, and artifact checksums.
 
 
+## Rerun a workflow from the exact recorded inputs
+
+To repeat a completed run, call the rerun endpoint. It creates a new run ID and output directory while reusing the source run's immutable `counts.csv`, `metadata.csv`, and `workflow.R` snapshots only after verifying each SHA-256 against the source provenance.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/runs/<run_id>/rerun"
+```
+
+Only terminal runs (`succeeded`, `failed`, or `timed_out`) with intact snapshots can be rerun. A run that predates snapshot capture, has missing snapshots, or has a checksum mismatch is rejected with HTTP 409. Unknown runs return HTTP 404. The response contains `parent_run_id` and `attempt`; the run status and history preserve lineage. A lineage is limited to five total attempts. The new run records the same input hashes and workflow hash, but captures its own runtime environment; identical inputs and code do not guarantee identical results across different R/Bioconductor environments.
+
+Reruns use a fresh output directory and never reuse the source run's result files. This is a manual reproducibility action, not an automatic retry policy or a resumable Snakemake DAG.
 ## Preview differential-expression results
 
 After the run status becomes `succeeded`, query the verified full result table. The endpoint refuses to preview results for unfinished/failed runs and rechecks the artifact SHA-256 before parsing it.

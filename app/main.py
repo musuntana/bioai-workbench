@@ -498,6 +498,36 @@ def submit_run(request: RunRequest, background_tasks: BackgroundTasks) -> dict[s
         "status": record["status"],
         "created_at": record["created_at"],
         "status_url": f"/api/v1/runs/{run_id}",
+        "parent_run_id": record.get("parent_run_id"),
+        "attempt": record.get("attempt", 1),
+    }
+
+
+@app.post("/api/v1/runs/{run_id}/rerun", response_model=RunAccepted, status_code=202)
+def rerun_run(run_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
+    """Queue a new run using the source run's hash-verified immutable snapshots."""
+    try:
+        record = run_manager.create_rerun(run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Run not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    request_data = {"workflow_id": record["workflow_id"], **record["parameters"]}
+    background_tasks.add_task(
+        run_manager.execute,
+        record["run_id"],
+        request_data,
+        source_run_id=run_id,
+    )
+    return {
+        "run_id": record["run_id"],
+        "workflow_id": record["workflow_id"],
+        "status": record["status"],
+        "created_at": record["created_at"],
+        "status_url": f"/api/v1/runs/{record['run_id']}",
+        "parent_run_id": record["parent_run_id"],
+        "attempt": record["attempt"],
     }
 
 

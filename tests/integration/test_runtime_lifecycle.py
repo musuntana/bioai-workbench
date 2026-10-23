@@ -99,6 +99,61 @@ class RuntimeLifecycleTests(unittest.TestCase):
             self.assertIn("synthetic fake Rscript completed", log)
             self.assertFalse(truncated)
 
+
+    def test_rerun_uses_original_verified_snapshots_after_inputs_change(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager, source_run_id = self._run_fake_workflow(root, create_outputs=True)
+            source_dir = manager.store.run_dir(source_run_id)
+            source_counts = (source_dir / "tmp" / "counts.csv").read_bytes()
+            source_metadata = (source_dir / "tmp" / "metadata.csv").read_bytes()
+            source_workflow = (source_dir / "tmp" / "workflow.R").read_bytes()
+            original_status = manager.store.get(source_run_id)
+
+            (root / "inputs" / "counts.csv").write_text(
+                "gene_id,control_1,control_2,treatment_1,treatment_2\ngene_1,999,999,999,999\n",
+                encoding="utf-8",
+            )
+            rerun = manager.create_rerun(source_run_id)
+            self.assertEqual(rerun["parent_run_id"], source_run_id)
+            self.assertEqual(rerun["root_run_id"], source_run_id)
+            self.assertEqual(rerun["attempt"], 2)
+
+            bin_dir = root / "bin"
+            path = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+            with patch.dict(os.environ, {"PATH": path}):
+                manager.execute(
+                    rerun["run_id"],
+                    {"workflow_id": rerun["workflow_id"], **rerun["parameters"]},
+                    source_run_id=source_run_id,
+                )
+
+            status = manager.store.get(rerun["run_id"])
+            rerun_dir = manager.store.run_dir(rerun["run_id"])
+            self.assertEqual(status["status"], "succeeded")
+            self.assertEqual((rerun_dir / "tmp" / "counts.csv").read_bytes(), source_counts)
+            self.assertEqual((rerun_dir / "tmp" / "metadata.csv").read_bytes(), source_metadata)
+            self.assertEqual((rerun_dir / "tmp" / "workflow.R").read_bytes(), source_workflow)
+            self.assertEqual(status["input_provenance"], original_status["input_provenance"])
+            self.assertEqual(
+                status["environment_provenance"]["workflow_sha256"],
+                original_status["environment_provenance"]["workflow_sha256"],
+            )
+
+    def test_rerun_refuses_tampered_snapshots_and_active_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager, source_run_id = self._run_fake_workflow(root, create_outputs=True)
+            source_dir = manager.store.run_dir(source_run_id)
+            (source_dir / "tmp" / "counts.csv").write_text("tampered\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "checksum"):
+                manager.create_rerun(source_run_id)
+
+            active_id = "b" * 32
+            manager.store.create(active_id, "deseq2-basic")
+            with self.assertRaisesRegex(ValueError, "completed"):
+                manager.create_rerun(active_id)
+
     def test_zero_exit_without_required_outputs_is_a_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             manager, run_id = self._run_fake_workflow(
