@@ -72,7 +72,7 @@ Query parameters:
 - `padj_max` (default `0.05`) and `min_abs_log2fc` (default `1`) define significance.
 - `sort_by`: `padj`, `log2FoldChange`, `baseMean`, or `gene_id`; `sort_order`: `asc` or `desc`.
 
-The response includes the current page, total matching rows, result summary, and `plot_points` for the volcano chart. Missing adjusted p-values are returned as `null` and are excluded from the plot. The plot is capped at 5,000 points, preserving significant points when possible; use the full CSV download for complete, unmodified results. This endpoint is a visualization aid, not a substitute for scientific review.
+The response includes the current page, total matching rows, result summary, `plot_points` for the volcano chart, and `ma_points` for an MA plot (log10(mean expression + 1) versus log2 fold change). MA points are deterministically sampled across mean expression when more than 5,000 genes are plottable. Missing adjusted p-values are returned as `null` and are excluded from the plot. The plot is capped at 5,000 points, preserving significant points when possible; use the full CSV download for complete, unmodified results. This endpoint is a visualization aid, not a substitute for scientific review.
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.

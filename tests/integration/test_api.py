@@ -311,6 +311,10 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["missing_padj_genes"], 1)
             self.assertEqual(payload["summary"]["plot_eligible_genes"], 5)
             self.assertEqual(len(payload["plot_points"]), 5)
+            self.assertEqual(payload["summary"]["ma_eligible_genes"], 6)
+            self.assertEqual(payload["summary"]["ma_points_returned"], 6)
+            self.assertFalse(payload["summary"]["ma_points_truncated"])
+            self.assertEqual({point["gene_id"] for point in payload["ma_points"]}, {f"gene_{letter}" for letter in "abcdef"})
             self.assertFalse(payload["summary"]["plot_points_truncated"])
             self.assertEqual(
                 {point["gene_id"] for point in payload["plot_points"] if point["significant"]},
@@ -419,6 +423,8 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('/api/v1/inputs/validate', response.text)
         self.assertIn('id="results-panel"', response.text)
         self.assertIn('id="volcano-plot"', response.text)
+        self.assertIn('id="ma-plot"', response.text)
+        self.assertIn("drawMAPlot(payload.ma_points, summary)", response.text)
         self.assertIn('/results?', response.text)
 
 
