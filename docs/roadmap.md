@@ -15,7 +15,7 @@
 - [x] Define counts/metadata schemas and validation behavior.
 - [x] Implement a clean-room DESeq2 CLI workflow using synthetic input data.
 - [x] Save full/significant result tables, session information, parameters, and a run manifest with input/output fingerprints.
-- [x] Add an opt-in local integration smoke-test script covering valid input, expected artifacts, path-free manifest, mismatched samples, and negative counts.
+- [x] Add an opt-in local integration smoke-test script covering valid input, expected artifacts, path-free manifest, mismatched samples, missing condition metadata, negative/non-integer counts, duplicate gene IDs, insufficient replicates, and integer overflow.
 - [ ] Run the smoke test in a clean R/Bioconductor environment and confirm all positive/negative cases.
 - [ ] Document and pin a tested R/DESeq2 dependency combination.
 
