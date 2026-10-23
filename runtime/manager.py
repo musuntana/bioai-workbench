@@ -84,13 +84,6 @@ class RunManager:
             raise FileNotFoundError("Run not found.")
         if record.get("status") not in _TERMINAL_STATUSES:
             raise ValueError("Only completed runs can be rerun.")
-        try:
-            request = RunRequest.model_validate(
-                {"workflow_id": record["workflow_id"], **record["parameters"]}
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("Run parameters cannot be revalidated; this run cannot be rerun.") from exc
-
         environment_provenance = record.get("environment_provenance")
         input_provenance = record.get("input_provenance")
         if not isinstance(environment_provenance, dict) or not isinstance(input_provenance, dict):
@@ -111,6 +104,12 @@ class RunManager:
             name: self._verified_snapshot_path(source_run_id, name, expected_hash)
             for name, expected_hash in expected_hashes.items()
         }
+        try:
+            request = RunRequest.model_validate(
+                {"workflow_id": record["workflow_id"], **record["parameters"]}
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Run parameters cannot be revalidated; this run cannot be rerun.") from exc
         return record, request, snapshots
 
     def _verified_snapshot_path(self, run_id: str, filename: str, expected_sha256: str) -> Path:
