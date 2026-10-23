@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from app.schemas import RunRequest
 from app.registry import get_workflow
+from app.schemas import RunRequest
 from agent.contracts import WorkflowPlan
 
 
