@@ -43,7 +43,7 @@ mkdir -p data/inputs/demo
 Rscript examples/deseq2/generate_synthetic_data.R data/inputs/demo
 ```
 
-The generated fixture is synthetic. The API accepts only relative CSV paths beneath `BIOAI_INPUT_ROOT`, which defaults to `data/inputs/`.
+The generated fixture is synthetic. The API accepts only relative CSV paths beneath `BIOAI_INPUT_ROOT`, which defaults to `data/inputs/`. You can also upload CSVs from the web UI; uploaded files are stored locally and are not sent to an external model.
 
 ### 4. Start the local workbench
 
@@ -75,6 +75,8 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 
 - `GET /healthz` — process health.
 - `GET /api/v1/workflows` — registered workflow metadata.
+- `GET /api/v1/inputs` — list available CSV inputs using relative paths and sizes.
+- `PUT /api/v1/inputs/{filename}` — upload a validated UTF-8 CSV (25 MiB limit); existing files are never overwritten.
 - `POST /api/v1/runs` — validate and queue a registered workflow request.
 - `GET /api/v1/runs` — browse run history with pagination and status filtering.
 - `GET /api/v1/runs/{run_id}` — state and exit information.
