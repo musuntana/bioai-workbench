@@ -135,6 +135,58 @@ if grep -Fq "$TMP_BASE" "$TMP_BASE/download-run_manifest.tsv"; then
   exit 1
 fi
 
+# Exercise the real result explorer, scientific report, exact-gene view and
+# immutable rerun. These checks run only in an explicit opt-in R/DESeq2 smoke.
+curl -fsS "$BASE_URL/api/v1/runs/$RUN_ID/results?limit=100" \
+  -o "$TMP_BASE/results.json"
+curl -fsS "$BASE_URL/api/v1/runs/$RUN_ID/genes/gene_001" \
+  -o "$TMP_BASE/gene-detail.json"
+curl -fsS -D "$TMP_BASE/report-headers.txt" \
+  "$BASE_URL/api/v1/runs/$RUN_ID/report" -o "$TMP_BASE/report.html"
+
+if ! grep -qi '^content-disposition: attachment;' "$TMP_BASE/report-headers.txt"; then
+  echo "Report export was not offered as a download." >&2
+  exit 1
+fi
+
+curl -fsS -X POST "$BASE_URL/api/v1/runs/$RUN_ID/rerun" \
+  -o "$TMP_BASE/rerun-accepted.json"
+RERUN_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["run_id"])' "$TMP_BASE/rerun-accepted.json")"
+RERUN_STATUS="queued"
+for ((attempt = 0; attempt < MAX_WAIT_SECONDS; attempt++)); do
+  curl --connect-timeout 2 --max-time 10 -fsS \
+    "$BASE_URL/api/v1/runs/$RERUN_ID" -o "$TMP_BASE/rerun-status.json"
+  RERUN_STATUS="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$TMP_BASE/rerun-status.json")"
+  case "$RERUN_STATUS" in
+    succeeded) break ;;
+    failed|timed_out)
+      echo "Snapshot rerun terminated with status $RERUN_STATUS." >&2
+      curl -fsS "$BASE_URL/api/v1/runs/$RERUN_ID/logs" -o "$TMP_BASE/rerun-logs.json" || true
+      cat "$TMP_BASE/rerun-status.json" >&2
+      exit 1 ;;
+    queued|running) sleep 1 ;;
+    *) echo "Unexpected snapshot rerun state: $RERUN_STATUS" >&2; exit 1 ;;
+  esac
+done
+if [[ "$RERUN_STATUS" != "succeeded" ]]; then
+  echo "Snapshot rerun failed to complete within $MAX_WAIT_SECONDS seconds." >&2
+  exit 1
+fi
+curl -fsS "$BASE_URL/api/v1/runs/$RERUN_ID/artifacts" \
+  -o "$TMP_BASE/rerun-artifacts.json"
+curl -fsS "$BASE_URL/api/v1/runs/$RERUN_ID/artifacts/differential_expression_all.csv" \
+  -o "$TMP_BASE/rerun-differential_expression_all.csv"
+curl -fsS "$BASE_URL/api/v1/runs/compare?run_a=$RUN_ID&run_b=$RERUN_ID" \
+  -o "$TMP_BASE/run-comparison.json"
+curl -fsS "$BASE_URL/api/v1/runs/compare/gene?run_a=$RUN_ID&run_b=$RERUN_ID&gene_id=gene_001" \
+  -o "$TMP_BASE/gene-comparison.json"
+curl -fsS "$BASE_URL/api/v1/runs/compare/genes?run_a=$RUN_ID&run_b=$RERUN_ID" \
+  -o "$TMP_BASE/gene-set-comparison.json"
+
+# A standalone standard-library validator cross-checks downloaded DESeq2 CSVs,
+# live API summaries, SVG report contents and the real rerun's artifact hashes.
+python3 scripts/verify_deseq2_smoke.py "$TMP_BASE"
+
 R_VERSION="$(Rscript -e 'cat(R.version.string)')"
 DESEQ2_VERSION="$(Rscript -e 'cat(as.character(utils::packageVersion("DESeq2")))' )"
 COMMIT_SHA="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
@@ -159,6 +211,9 @@ summary = {
     },
     "scope": "synthetic API-to-DESeq2 end-to-end smoke test; not scientific or clinical validation",
 }
+summary["acceptance_matrix"] = json.loads(
+    (Path(output).parent / "acceptance-matrix.json").read_text(encoding="utf-8")
+)
 Path(output).write_text(json.dumps(summary, indent=2) + chr(10), encoding="utf-8")
 PY
 
