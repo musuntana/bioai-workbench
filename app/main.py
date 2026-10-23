@@ -10,7 +10,7 @@ import os
 import re
 import tempfile
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -79,6 +79,9 @@ def home() -> FileResponse:
 
 INPUT_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$")
 MAX_INPUT_FILE_BYTES = 25 * 1024 * 1024
+MAX_RESULTS_FILE_BYTES = 100 * 1024 * 1024
+MAX_RESULTS_ROWS = 500_000
+MAX_VOLCANO_POINTS = 5_000
 
 
 def _validate_csv_file(path: Path) -> None:
@@ -469,6 +472,205 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
     if artifacts is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return {"run_id": run_id, "artifacts": artifacts}
+
+
+
+def _parse_result_number(value: str | None) -> float | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _is_significant(row: dict[str, Any], padj_max: float, min_abs_log2fc: float) -> bool:
+    padj = row.get("padj")
+    log2_fold_change = row.get("log2FoldChange")
+    return (
+        isinstance(padj, (int, float))
+        and isinstance(log2_fold_change, (int, float))
+        and padj <= padj_max
+        and abs(log2_fold_change) >= min_abs_log2fc
+    )
+
+
+def _sample_plot_points(
+    significant: list[dict[str, Any]],
+    other: list[dict[str, Any]],
+    limit: int = MAX_VOLCANO_POINTS,
+) -> list[dict[str, Any]]:
+    """Keep all significant points when possible and evenly sample the rest."""
+    def sample(points: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
+        if count <= 0 or not points:
+            return []
+        if len(points) <= count:
+            return points
+        return [points[(index * len(points)) // count] for index in range(count)]
+
+    significant = sorted(significant, key=lambda point: point["log2FoldChange"])
+    other = sorted(other, key=lambda point: point["log2FoldChange"])
+    if len(significant) >= limit:
+        return sample(significant, limit)
+    return significant + sample(other, limit - len(significant))
+
+
+@app.get("/api/v1/runs/{run_id}/results")
+def get_run_results(
+    run_id: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    q: str = Query(default="", max_length=200),
+    significant_only: bool = False,
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+    sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
+    sort_order: Literal["asc", "desc"] = "asc",
+) -> dict[str, Any]:
+    """Return a paginated, filterable view of the verified DESeq2 result artifact."""
+    try:
+        record = run_manager.store.get(run_id)
+        artifacts = run_manager.get_artifacts(run_id)
+        run_dir = run_manager.store.run_dir(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Run not found.") from exc
+
+    if record is None or artifacts is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    if record.get("status") != "succeeded":
+        raise HTTPException(status_code=409, detail="Results are available only after a run succeeds.")
+
+    entry = next(
+        (item for item in artifacts if item.get("path") == "differential_expression_all.csv"),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Differential-expression results are unavailable.")
+
+    output_root = (run_dir / "outputs").resolve()
+    candidate = output_root / "differential_expression_all.csv"
+    if candidate.is_symlink():
+        raise HTTPException(status_code=404, detail="Differential-expression results are unavailable.")
+    try:
+        result_file = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=404, detail="Differential-expression results are unavailable.") from exc
+    if not result_file.is_relative_to(output_root) or not result_file.is_file():
+        raise HTTPException(status_code=404, detail="Differential-expression results are unavailable.")
+    if result_file.stat().st_size > MAX_RESULTS_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Result artifact exceeds the preview size limit.")
+
+    expected_hash = entry.get("sha256")
+    if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        raise HTTPException(status_code=409, detail="Result checksum metadata is invalid.")
+    digest = hashlib.sha256()
+    with result_file.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    if not hmac.compare_digest(digest.hexdigest(), expected_hash):
+        raise HTTPException(status_code=409, detail="Result checksum mismatch; refusing preview.")
+
+    try:
+        with result_file.open("r", encoding="utf-8-sig", newline="") as stream:
+            reader = csv.DictReader(stream, strict=True)
+            columns = reader.fieldnames or []
+            required_columns = {"gene_id", "baseMean", "log2FoldChange", "pvalue", "padj"}
+            if not required_columns.issubset(columns):
+                raise HTTPException(status_code=409, detail="Result artifact does not match the DESeq2 result schema.")
+
+            all_rows: list[dict[str, Any]] = []
+            for row_number, raw_row in enumerate(reader, start=2):
+                if row_number > MAX_RESULTS_ROWS + 1:
+                    raise HTTPException(status_code=413, detail="Result artifact exceeds the preview row limit.")
+                if None in raw_row or any(value is None for value in raw_row.values()):
+                    raise HTTPException(status_code=409, detail="Result artifact contains a malformed row.")
+                gene_id = raw_row.get("gene_id", "")
+                if not gene_id.strip():
+                    raise HTTPException(status_code=409, detail="Result artifact contains an empty gene ID.")
+                row: dict[str, Any] = {"gene_id": gene_id}
+                numeric_columns = {"baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"}
+                for column in columns:
+                    if column == "gene_id":
+                        continue
+                    raw_value = raw_row.get(column)
+                    if column in numeric_columns:
+                        row[column] = _parse_result_number(raw_value)
+                    else:
+                        row[column] = raw_value
+                row["significant"] = _is_significant(row, padj_max, min_abs_log2fc)
+                all_rows.append(row)
+    except HTTPException:
+        raise
+    except (UnicodeDecodeError, csv.Error, OSError) as exc:
+        raise HTTPException(status_code=409, detail="Result artifact is not a readable CSV.") from exc
+
+    if not all_rows:
+        raise HTTPException(status_code=409, detail="Result artifact contains no gene rows.")
+
+    significant_rows = [
+        row for row in all_rows if _is_significant(row, padj_max, min_abs_log2fc)
+    ]
+    missing_padj_count = sum(row.get("padj") is None for row in all_rows)
+    plot_candidates: list[dict[str, Any]] = []
+    for row in all_rows:
+        log2_fold_change = row.get("log2FoldChange")
+        padj = row.get("padj")
+        if not isinstance(log2_fold_change, (int, float)) or not isinstance(padj, (int, float)):
+            continue
+        plot_candidates.append({
+            "gene_id": row["gene_id"],
+            "log2FoldChange": log2_fold_change,
+            "padj": padj,
+            "significant": _is_significant(row, padj_max, min_abs_log2fc),
+        })
+
+    significant_points = [point for point in plot_candidates if point["significant"]]
+    other_points = [point for point in plot_candidates if not point["significant"]]
+    plot_points = _sample_plot_points(significant_points, other_points)
+
+    search_term = q.casefold().strip()
+    filtered_rows = [
+        row for row in all_rows
+        if (not search_term or search_term in row["gene_id"].casefold())
+        and (not significant_only or row["significant"])
+    ]
+    if sort_by == "gene_id":
+        filtered_rows.sort(
+            key=lambda row: row["gene_id"].casefold(),
+            reverse=sort_order == "desc",
+        )
+    else:
+        def sort_key(row: dict[str, Any]) -> tuple[int, float, str]:
+            value = row.get(sort_by)
+            if not isinstance(value, (int, float)):
+                return (1, 0.0, row["gene_id"].casefold())
+            return (
+                0,
+                value if sort_order == "asc" else -value,
+                row["gene_id"].casefold(),
+            )
+        filtered_rows.sort(key=sort_key)
+
+    return {
+        "run_id": run_id,
+        "columns": columns,
+        "rows": filtered_rows[offset : offset + limit],
+        "offset": offset,
+        "limit": limit,
+        "filtered_genes": len(filtered_rows),
+        "summary": {
+            "total_genes": len(all_rows),
+            "significant_genes": len(significant_rows),
+            "missing_padj_genes": missing_padj_count,
+            "plot_eligible_genes": len(plot_candidates),
+            "plot_points_returned": len(plot_points),
+            "plot_points_truncated": len(plot_candidates) > len(plot_points),
+            "padj_max": padj_max,
+            "min_abs_log2fc": min_abs_log2fc,
+        },
+        "plot_points": plot_points,
+    }
 
 
 @app.get("/api/v1/runs/{run_id}/artifacts/{artifact_path:path}", include_in_schema=True)
