@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from app.registry import list_workflows
 from app.schemas import (
@@ -988,6 +988,42 @@ def get_run_results(
             "ma_plottable": any(point["gene_id"] == focus_gene for point in ma_candidates),
         },
     }
+
+
+@app.get("/api/v1/runs/{run_id}/report")
+def download_run_report(
+    run_id: str,
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+) -> Response:
+    """Download an offline HTML report without writing into immutable run outputs."""
+    from app.report import render_html_report
+
+    if not re.fullmatch(r"[0-9a-f]{32}", run_id):
+        raise HTTPException(status_code=404, detail="Run not found.")
+    preview = get_run_results(
+        run_id=run_id, limit=20, offset=0, q="", significant_only=True,
+        focus_gene="", padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
+        sort_by="padj", sort_order="asc",
+    )
+    record = run_manager.store.get(run_id)
+    artifacts = run_manager.get_artifacts(run_id)
+    if record is None or artifacts is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+    report = render_html_report(record, preview, artifacts)
+    return Response(
+        content=report,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="deseq2_report_{run_id}.html"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            ),
+        },
+    )
 
 
 @app.get("/api/v1/runs/{run_id}/results/export")
