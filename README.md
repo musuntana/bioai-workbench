@@ -2,102 +2,137 @@
 
 **A local-first, reproducible workbench for bioinformatics workflows, with optional AI-assisted planning.**
 
-BioAI Workbench aims to turn established R/Python bioinformatics tools into workflows that are easier to run, inspect, reproduce, and extend. It prioritizes reliable execution and traceable artifacts over autonomous analysis claims.
+BioAI Workbench wraps established R/Python tools in a thin API and UI with validated inputs, observable runs, bounded execution, and checksummed artifacts. The first workflow is a two-condition differential-expression analysis using DESeq2.
 
-> **Project status:** Initial clean-room DESeq2 CLI and synthetic-data generator are present. The local integration smoke test has not yet been executed in a clean R/Bioconductor environment. No company scripts or private datasets have been imported.
+> **Project status:** the product skeleton and DESeq2 adapter are implemented on the current development branch. The clean-environment DESeq2 integration test remains pending. Do not treat the current skeleton as a hardened multi-user service or a clinically validated system.
 
 ## Product principles
 
-- **Reuse mature tools:** integrate established packages and workflow engines instead of reimplementing statistical methods.
-- **Deterministic execution first:** a workflow must be runnable and testable without an LLM.
-- **AI proposes; the workflow validates:** model output never bypasses input validation, resource limits, or explicit approval gates.
-- **Reproducibility by default:** record parameters, tool versions, input fingerprints, logs, and output manifests.
-- **Local-first privacy:** raw research data stays in the user's configured environment unless an explicit integration says otherwise.
-- **Clean public provenance:** only original, authorized, or license-compatible code and synthetic/publicly licensed examples may enter this repository.
-
-## Initial scope
-
-The first vertical is a small, reproducible differential-expression workflow using **DESeq2** and synthetic count data. The initial milestone is intentionally narrow:
-
-1. validate count-matrix and sample-metadata contracts;
-2. run a deterministic R analysis;
-3. save result tables, session information, and a machine-readable run manifest;
-4. test success and failure paths;
-5. make the workflow callable by a future workflow runner or agent adapter.
-
-This is not a clinical diagnostic system and does not claim clinical validity.
+- **Reuse mature tools:** integrate established statistical packages and workflow engines rather than reimplementing their methods.
+- **Deterministic execution first:** workflows run without an LLM.
+- **Agent proposes; runtime validates:** planning can select registered workflow IDs only; it cannot submit arbitrary shell commands.
+- **Reproducibility by default:** record parameters, tool versions, input fingerprints, run state, and output checksums.
+- **Local-first privacy:** raw research data stays in the configured local input root and is not sent to external models by default.
+- **Clean public provenance:** use original, authorized, or license-compatible code and synthetic/publicly licensed examples only.
 
 ## Quick start
 
-Requirements: R plus a Bioconductor-compatible installation of DESeq2.
+Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), R, and a Bioconductor-compatible installation of DESeq2.
 
-Install DESeq2 in R if needed:
+### 1. Install the Python environment
 
-```r
+\`\`\`bash
+uv sync --extra dev
+\`\`\`
+
+### 2. Install DESeq2
+
+Run in R:
+
+\`\`\`r
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
 BiocManager::install("DESeq2")
-```
+\`\`\`
 
-Generate synthetic input data and run the workflow:
+### 3. Generate synthetic input files
 
-```bash
-Rscript examples/deseq2/generate_synthetic_data.R /tmp/bioai-input
-Rscript scripts/run_deseq2.R \
-  --counts /tmp/bioai-input/counts.csv \
-  --metadata /tmp/bioai-input/metadata.csv \
-  --condition condition \
-  --reference control \
-  --contrast treatment \
+\`\`\`bash
+mkdir -p data/inputs/demo
+Rscript examples/deseq2/generate_synthetic_data.R data/inputs/demo
+\`\`\`
+
+The generated fixture is synthetic. The API accepts only relative CSV paths beneath \`BIOAI_INPUT_ROOT\`, which defaults to \`data/inputs/\`.
+
+### 4. Start the local workbench
+
+\`\`\`bash
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+\`\`\`
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Use \`demo/counts.csv\` and \`demo/metadata.csv\`, then confirm the condition column, reference, and contrast.
+
+The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network.
+
+### CLI compatibility
+
+The original CLI entrypoint remains available:
+
+\`\`\`bash
+Rscript scripts/run_deseq2.R \\
+  --counts data/inputs/demo/counts.csv \\
+  --metadata data/inputs/demo/metadata.csv \\
+  --condition condition \\
+  --reference control \\
+  --contrast treatment \\
   --outdir /tmp/bioai-output
-```
+\`\`\`
 
-Optional integration smoke test (requires the same dependencies):
+The canonical R implementation now lives in \`workflows/deseq2/run.R\`.
 
-```bash
-bash scripts/smoke_test_deseq2.sh
-```
+## API surface
 
-The example uses generated synthetic counts only. The smoke test covers successful artifact creation, manifest path checks, and expected failures for mismatched sample IDs, missing condition metadata, negative/non-integer counts, duplicate gene IDs, insufficient replicates, and integer overflow. It has not yet been runtime-verified in an R/Bioconductor environment; treat the result as pending until it runs successfully.
+- \`GET /healthz\` — process health.
+- \`GET /api/v1/workflows\` — registered workflow metadata.
+- \`POST /api/v1/runs\` — validate and queue a registered workflow request.
+- \`GET /api/v1/runs/{run_id}\` — state and exit information.
+- \`GET /api/v1/runs/{run_id}/logs\` — bounded execution log.
+- \`GET /api/v1/runs/{run_id}/artifacts\` — relative artifact names, byte sizes, and SHA-256 checksums.
 
-## Architecture direction
-
-- **Analysis layer:** R/Python tools such as DESeq2, Seurat, and other established packages.
-- **Workflow layer:** adopt a mature engine such as Snakemake after validating the first vertical.
-- **Execution layer:** isolated jobs, structured logs, resource controls, explicit run states, and artifact manifests.
-- **Agent layer (later):** optional planning and tool selection through adapters; all proposed actions are validated before execution.
-- **Workbench API/UI (later):** project setup, run history, logs, artifacts, and review/approval steps.
-
-Biomni and ClawBio are candidates for evaluation, not mandatory runtime dependencies. Integration decisions will follow a small proof of concept rather than a wholesale fork.
+See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
 
 ## Repository map
 
-- `docs/architecture.md` — system boundaries and data flow
-- `docs/roadmap.md` — milestones and acceptance criteria
-- `docs/source-code-migration.md` — safe migration process for existing scripts
-- `SECURITY.md` — reporting and data-handling expectations
-- `examples/` — synthetic or explicitly authorized examples only
+\`\`\`text
+app/                         FastAPI API and static local UI
+agent/                       Provider-neutral, deterministic planning contract
+workflows/deseq2/             Canonical DESeq2 workflow and manifest
+skills/differential-expression/ Task contract for differential expression
+runtime/                     Run state, bounded process execution, resource limits
+artifacts/                   Artifact manifest and checksum helpers
+tests/unit/                  Pure component tests
+tests/integration/           API contract tests
+tests/workflow/              Workflow registration and contract tests
+examples/deseq2/              Synthetic fixture generator
+docs/                         Architecture, decisions, API, reproducibility
+\`\`\`
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| \`BIOAI_INPUT_ROOT\` | \`data/inputs/\` | Allowed root for input CSV files |
+| \`BIOAI_RUNS_DIR\` | \`runs/\` | Local run records, logs, and outputs |
+| \`BIOAI_MAX_RUN_SECONDS\` | \`1800\` | Per-run wall-clock limit |
+| \`BIOAI_MAX_LOG_BYTES\` | \`2097152\` | Maximum bytes retained per run log |
+| \`BIOAI_MAX_CONCURRENT_RUNS\` | \`2\` | Maximum concurrent workflow processes |
+
+Relative configuration paths are resolved from the repository root. The runtime rejects absolute input paths, path traversal, and symlinks that resolve outside the input root. Generated run files are ignored by Git.
+
+## Tests and local safety checks
+
+\`\`\`bash
+uv run pytest
+python3 -m unittest discover -s tests -v
+python3 scripts/audit_public_release.py
+bash scripts/smoke_test_deseq2.sh
+\`\`\`
+
+The final command requires R and DESeq2. The DESeq2 integration smoke test has not yet been confirmed in a clean R/Bioconductor environment. Passing Python tests does not prove that R analysis ran successfully or that results are scientifically valid.
+
+## Architecture direction
+
+- **Analysis:** established tools such as DESeq2 and Seurat.
+- **Workflow:** registered workflow contracts first; evaluate Snakemake or Nextflow when multi-step DAGs justify them.
+- **Runtime:** bounded local subprocesses, observable state, structured logs, and artifact checksums.
+- **Agent:** optional planning over allowlisted workflow IDs, with explicit user approval.
+- **Future deployment:** add stronger process/container isolation and multi-user authentication before offering a shared service.
+
+Biomni, ClawBio, Snakemake, and Nextflow remain evaluation candidates rather than mandatory runtime dependencies. See [architecture](docs/architecture.md), [roadmap](docs/roadmap.md), and [source migration policy](docs/source-code-migration.md).
 
 ## Public-release rule
 
-Do not copy scripts from a workplace or private repository into this public repository merely by renaming variables or removing company names. First confirm reuse rights, classify sensitive dependencies, write a clean interface specification, then either refactor code you are authorized to release or implement the generic workflow independently. Never upload real client/patient data, internal endpoints, credentials, private reference databases, or report templates.
+Do not copy scripts from a workplace or private repository into this public repository merely by renaming variables or removing company names. Confirm ownership and redistribution rights, classify sensitive dependencies, define a clean interface, and use synthetic tests. If publication rights are uncertain, implement the generic behavior independently.
 
-## Local safety checks
-
-Run the standard-library source audit and its unit tests before publishing source/config changes:
-
-```bash
-python3 scripts/audit_public_release.py
-python3 -m unittest discover -s tests -v
-```
-
-The scanner flags common disclosure patterns and prohibited local-data directories. It does not inspect every binary, infer code ownership, verify third-party licenses, or replace human review.
-
-## CI policy
-
-GitHub Actions does not run on every push. The lightweight safety checks run only for pull requests that change relevant source, documentation, or configuration paths, or when manually dispatched. The DESeq2 integration job is manual opt-in because installing Bioconductor dependencies is comparatively expensive. See [the workflow](.github/workflows/quality.yml).
-
-## Development status
-
-The repository foundation and a clean-room DESeq2 workflow implementation are present. The DESeq2 integration run remains unverified until executed in an R/Bioconductor environment. A workflow is not considered complete until its inputs, outputs, runtime dependencies, validation behavior, and reproducibility evidence are documented and tested.
+This project is not a clinical diagnostic system and has not been validated for clinical decisions.
