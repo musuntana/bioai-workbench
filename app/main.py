@@ -7,8 +7,9 @@ import hmac
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 
 from app.registry import list_workflows
 from app.schemas import (
@@ -35,6 +36,34 @@ app = FastAPI(
     version="0.2.0",
     description="Local-first API for registered reproducible bioinformatics workflows.",
 )
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return a stable, value-free validation error contract for API clients."""
+    del request
+    details = []
+    for error in exc.errors():
+        location = error.get("loc", ())
+        field = ".".join(str(part) for part in location if part not in {"body", "query", "path", "header"})
+        details.append(
+            {
+                "field": field or "$",
+                "message": str(error.get("msg", "Invalid value.")),
+            }
+        )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Request validation failed.",
+                "details": details,
+            }
+        },
+    )
 
 
 @app.get("/", include_in_schema=False)
