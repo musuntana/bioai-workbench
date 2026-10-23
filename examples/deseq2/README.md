@@ -1,6 +1,6 @@
 # Synthetic DESeq2 Example
 
-This directory will contain a small, fully synthetic example for the first workflow. No real research or client data should be added.
+This directory contains the input contract and a generator for a small, fully synthetic example. No real research or client data should be added.
 
 ## Input contract
 
@@ -28,4 +28,4 @@ This directory will contain a small, fully synthetic example for the first workf
 - R session information and tool versions;
 - validation summary and exit status.
 
-The example is a software integration fixture, not evidence of biological or clinical performance. The implementation and tests will be added in M1.
+The example is a software integration fixture, not evidence of biological or clinical performance. The runner is `scripts/run_deseq2.R`; generate the input fixture with `Rscript examples/deseq2/generate_synthetic_data.R /tmp/bioai-input`. Run the workflow using the command in the root README. Runtime execution and failure-case verification remain pending.
