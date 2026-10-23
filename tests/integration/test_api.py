@@ -174,7 +174,7 @@ class WorkbenchApiTests(unittest.TestCase):
                 listing = self.client.get("/api/v1/inputs")
                 duplicate = self.client.put(
                     "/api/v1/inputs/counts.csv",
-                    content=b"gene_id,sample_a\\ngene_1,99\\n",
+                    content=b"gene_id,sample_a\ngene_1,99\n",
                     headers={"content-type": "text/csv"},
                 )
 
@@ -199,12 +199,12 @@ class WorkbenchApiTests(unittest.TestCase):
             with patch("app.main.config", config):
                 bad_name = self.client.put(
                     "/api/v1/inputs/bad%20name.csv",
-                    content=b"a,b\\n1,2\\n",
+                    content=b"a,b\n1,2\n",
                     headers={"content-type": "text/csv"},
                 )
                 malformed = self.client.put(
                     "/api/v1/inputs/malformed.csv",
-                    content=b"a,b\\n1,2,3\\n",
+                    content=b"a,b\n1,2,3\n",
                     headers={"content-type": "text/csv"},
                 )
                 empty = self.client.put(
@@ -234,7 +234,7 @@ class WorkbenchApiTests(unittest.TestCase):
             ):
                 response = self.client.put(
                     "/api/v1/inputs/large.csv",
-                    content=b"column1,column2\\n1,2\\n",
+                    content=b"column1,column2\n1,2\n",
                     headers={"content-type": "text/csv"},
                 )
 
