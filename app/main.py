@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -27,6 +28,15 @@ config = RuntimeConfig.from_env()
 config.prepare()
 store = RunStore(config.runs_root)
 run_manager = RunManager(config=config, store=store)
+
+def _sha256_file(path: Path) -> str:
+    """Hash file contents without loading an entire artifact into memory."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
 
 app = FastAPI(
     title="BioAI Workbench",
@@ -149,9 +159,16 @@ def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
     if not artifact_file.is_relative_to(output_root) or not artifact_file.is_file():
         raise HTTPException(status_code=404, detail="Artifact not found.")
 
+    expected_sha256 = entry.get("sha256")
+    if not isinstance(expected_sha256, str) or not expected_sha256:
+        raise HTTPException(status_code=409, detail="Artifact integrity metadata is invalid.")
+    actual_sha256 = _sha256_file(artifact_file)
+    if actual_sha256 != expected_sha256:
+        raise HTTPException(status_code=409, detail="Artifact integrity check failed.")
+
     return FileResponse(
         artifact_file,
         filename=artifact_file.name,
         media_type="application/octet-stream",
-        headers={"X-Artifact-SHA256": str(entry.get("sha256", ""))},
+        headers={"X-Artifact-SHA256": actual_sha256},
     )

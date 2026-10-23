@@ -56,6 +56,14 @@ jobs:
       - name: Sync development environment
         run: uv sync --extra dev
 
+      - name: Export generated lockfile for one-time bootstrap
+        uses: actions/upload-artifact@v4
+        with:
+          name: uv-lock-bootstrap
+          path: uv.lock
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Compile Python safety tooling
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
 

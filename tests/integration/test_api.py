@@ -124,12 +124,18 @@ class WorkbenchApiTests(unittest.TestCase):
                 traversal = self.client.get(
                     f"/api/v1/runs/{run_id}/artifacts/%2E%2E%2Frun.json"
                 )
+                artifact.write_text("tampered\\n", encoding="utf-8")
+                tampered = self.client.get(
+                    f"/api/v1/runs/{run_id}/artifacts/differential_expression_all.csv"
+                )
 
             self.assertEqual(response.status_code, 200)
             self.assertIn("synthetic_gene,1.2", response.text)
             self.assertEqual(response.headers["x-artifact-sha256"], expected_hash)
             self.assertEqual(unknown.status_code, 404)
             self.assertEqual(traversal.status_code, 404)
+            self.assertEqual(tampered.status_code, 409)
+            self.assertNotIn("tampered", tampered.text)
 
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)
