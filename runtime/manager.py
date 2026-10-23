@@ -66,7 +66,15 @@ class RunManager:
             if not workflow.entrypoint.is_file():
                 raise RuntimeError("The registered workflow entrypoint is missing.")
 
-            workflow_hash = hashlib.sha256(workflow.entrypoint.read_bytes()).hexdigest()
+            # Run a private script copy: the provenance hash must identify
+            # exactly the script bytes submitted to Rscript.
+            workflow_snapshot = tmp_dir / "workflow.R"
+            digest = hashlib.sha256()
+            with workflow.entrypoint.open("rb") as source, workflow_snapshot.open("xb") as target:
+                while chunk := source.read(1024 * 1024):
+                    target.write(chunk)
+                    digest.update(chunk)
+            workflow_hash = digest.hexdigest()
             self.store.update(
                 run_id, environment_provenance={"workflow_sha256": workflow_hash}
             )
@@ -92,7 +100,7 @@ class RunManager:
             rscript = self._find_rscript()
             command = [
                 rscript,
-                str(workflow.entrypoint),
+                str(workflow_snapshot),
                 "--counts",
                 str(snapshots["counts"]),
                 "--metadata",
