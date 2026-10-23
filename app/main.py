@@ -704,6 +704,23 @@ def _sample_ma_points(
     return [points[(index * (len(points) - 1)) // (limit - 1)] for index in range(limit)]
 
 
+def _include_focused_point(
+    sampled: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    focus_gene: str,
+    limit: int = MAX_VOLCANO_POINTS,
+) -> list[dict[str, Any]]:
+    """Keep a requested gene visible without exceeding the plot sampling cap."""
+    if not focus_gene or limit <= 0:
+        return sampled
+    focused = next((point for point in candidates if point["gene_id"] == focus_gene), None)
+    if focused is None or any(point["gene_id"] == focus_gene for point in sampled):
+        return sampled
+    if len(sampled) >= limit:
+        return [*sampled[: limit - 1], focused]
+    return [*sampled, focused]
+
+
 def _load_verified_result_rows(
     run_id: str, padj_max: float, min_abs_log2fc: float, *, preserve_raw: bool = False
 ) -> tuple[list[str], list[dict[str, Any]]]:
@@ -880,6 +897,7 @@ def get_run_results(
     offset: int = Query(default=0, ge=0),
     q: str = Query(default="", max_length=200),
     significant_only: bool = False,
+    focus_gene: str = Query(default="", max_length=200),
     padj_max: float = Query(default=0.05, gt=0, le=1),
     min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
     sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
@@ -887,6 +905,11 @@ def get_run_results(
 ) -> dict[str, Any]:
     """Return a paginated, filterable view of the verified DESeq2 result artifact."""
     columns, all_rows = _load_verified_result_rows(run_id, padj_max, min_abs_log2fc)
+
+    focus_matches = [row for row in all_rows if focus_gene and row["gene_id"] == focus_gene]
+    if len(focus_matches) > 1:
+        raise HTTPException(status_code=409, detail="Duplicate gene IDs prevent focus lookup.")
+    focused_row = focus_matches[0] if focus_matches else None
 
     significant_rows = [
         row for row in all_rows if _is_significant(row, padj_max, min_abs_log2fc)
@@ -907,7 +930,9 @@ def get_run_results(
 
     significant_points = [point for point in plot_candidates if point["significant"]]
     other_points = [point for point in plot_candidates if not point["significant"]]
-    plot_points = _sample_plot_points(significant_points, other_points)
+    plot_points = _include_focused_point(
+        _sample_plot_points(significant_points, other_points), plot_candidates, focus_gene
+    )
 
     ma_candidates: list[dict[str, Any]] = []
     for row in all_rows:
@@ -925,7 +950,9 @@ def get_run_results(
             "log2FoldChange": log2_fold_change,
             "significant": _is_significant(row, padj_max, min_abs_log2fc),
         })
-    ma_points = _sample_ma_points(ma_candidates)
+    ma_points = _include_focused_point(
+        _sample_ma_points(ma_candidates), ma_candidates, focus_gene
+    )
 
     filtered_rows = _filter_sort_result_rows(
         all_rows, q=q, significant_only=significant_only, sort_by=sort_by,
@@ -954,6 +981,12 @@ def get_run_results(
         },
         "plot_points": plot_points,
         "ma_points": ma_points,
+        "focus": {
+            "gene_id": focus_gene or None,
+            "found": focused_row is not None,
+            "volcano_plottable": any(point["gene_id"] == focus_gene for point in plot_candidates),
+            "ma_plottable": any(point["gene_id"] == focus_gene for point in ma_candidates),
+        },
     }
 
 
