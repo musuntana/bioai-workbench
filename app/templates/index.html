@@ -95,6 +95,10 @@
         fetch("/api/v1/runs/" + runId + "/logs"),
         fetch("/api/v1/runs/" + runId + "/artifacts")
       ]);
+      if (logsResponse.ok) {
+        const payload = await logsResponse.json();
+        runLog.textContent = payload.text || "Waiting for workflow output…";
+      }
       if (statusResponse.ok) {
         const status = await statusResponse.json();
         runSummary.textContent = "Run " + status.run_id + " · " + status.status +
@@ -111,10 +115,6 @@
           }
           return;
         }
-      }
-      if (logsResponse.ok) {
-        const payload = await logsResponse.json();
-        runLog.textContent = payload.text || "Waiting for workflow output…";
       }
       window.setTimeout(function () { refreshRun(runId).catch(showError); }, 1500);
     }
