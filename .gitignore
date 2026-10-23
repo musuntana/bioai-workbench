@@ -31,11 +31,11 @@ renv/library/
 renv/staging/
 
 # Local research data and outputs
+data/inputs/
 data/raw/
 data/private/
 data/identifiable/
 results/
-artifacts/
 runs/
 *.rds
 *.RDS
