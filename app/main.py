@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
@@ -109,3 +109,49 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
     if artifacts is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return {"run_id": run_id, "artifacts": artifacts}
+
+
+@app.get("/api/v1/runs/{run_id}/artifacts/{artifact_path:path}", include_in_schema=True)
+def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
+    """Download a file only when it is listed in the run's artifact manifest."""
+    try:
+        artifacts = run_manager.get_artifacts(run_id)
+        run_dir = run_manager.store.run_dir(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+    if artifacts is None:
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    relative_path = PurePosixPath(artifact_path)
+    if (
+        not artifact_path
+        or "\\" in artifact_path
+        or relative_path.is_absolute()
+        or any(part in {"", ".", ".."} for part in artifact_path.split("/"))
+    ):
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    entry = next(
+        (item for item in artifacts if item.get("path") == relative_path.as_posix()),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    output_root = (run_dir / "outputs").resolve()
+    candidate = output_root / Path(*relative_path.parts)
+    if candidate.is_symlink():
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+    try:
+        artifact_file = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+    if not artifact_file.is_relative_to(output_root) or not artifact_file.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found.")
+
+    return FileResponse(
+        artifact_file,
+        filename=artifact_file.name,
+        media_type="application/octet-stream",
+        headers={"X-Artifact-SHA256": str(entry.get("sha256", ""))},
+    )

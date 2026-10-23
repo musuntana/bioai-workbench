@@ -50,3 +50,14 @@ The response includes `runs`, `total` (after status filtering), `limit`, and `of
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.
+
+
+## Download an artifact
+
+After a run succeeds, download an artifact by its manifest-listed relative path. Only files listed in that run's `artifact_manifest.json` are served; unlisted files and paths outside the output directory return HTTP 404.
+
+```bash
+curl -fOJ "http://127.0.0.1:8000/api/v1/runs/<run_id>/artifacts/differential_expression_all.csv"
+```
+
+The response includes the artifact's recorded SHA-256 in the `X-Artifact-SHA256` header. This endpoint is local-only and does not add authentication or make the service suitable for untrusted networks.
