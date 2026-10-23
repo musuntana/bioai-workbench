@@ -5,7 +5,7 @@
 - [x] Establish project boundaries and public-release rules.
 - [x] Document architecture and source-code migration process.
 - [x] Add a synthetic-data DESeq2 example generator and CLI runner.
-- [x] Add a local source/config scanner and unit tests for common accidental-disclosure patterns.
+- [x] Add a local source/config/documentation scanner and unit tests for common accidental-disclosure patterns.
 - [x] Add path-filtered pull-request checks and a manual workflow dispatch; no push-triggered CI.
 
 **Exit gate:** public repository contains only reviewed documentation and original/authorized code; no workplace scripts or real research data have been imported.
