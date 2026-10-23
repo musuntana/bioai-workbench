@@ -4,7 +4,7 @@
 
 BioAI Workbench aims to turn established R/Python bioinformatics tools into workflows that are easier to run, inspect, reproduce, and extend. It prioritizes reliable execution and traceable artifacts over autonomous analysis claims.
 
-> **Project status:** Early scaffold. The repository currently contains no imported company scripts, private datasets, or production credentials. The first workflow will be built against synthetic data.
+> **Project status:** Initial clean-room DESeq2 CLI and synthetic-data generator are present. The local integration smoke test has not yet been executed in a clean R/Bioconductor environment. No company scripts or private datasets have been imported.
 
 ## Product principles
 
@@ -26,6 +26,40 @@ The first vertical is a small, reproducible differential-expression workflow usi
 5. make the workflow callable by a future workflow runner or agent adapter.
 
 This is not a clinical diagnostic system and does not claim clinical validity.
+
+## Quick start
+
+Requirements: R plus a Bioconductor-compatible installation of DESeq2.
+
+Install DESeq2 in R if needed:
+
+```r
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+BiocManager::install("DESeq2")
+```
+
+Generate synthetic input data and run the workflow:
+
+```bash
+Rscript examples/deseq2/generate_synthetic_data.R /tmp/bioai-input
+Rscript scripts/run_deseq2.R \
+  --counts /tmp/bioai-input/counts.csv \
+  --metadata /tmp/bioai-input/metadata.csv \
+  --condition condition \
+  --reference control \
+  --contrast treatment \
+  --outdir /tmp/bioai-output
+```
+
+Optional integration smoke test (requires the same dependencies):
+
+```bash
+bash scripts/smoke_test_deseq2.sh
+```
+
+The example uses generated synthetic counts only. It has not yet been runtime-verified in this repository; please treat the smoke-test result as pending until it is run successfully.
 
 ## Architecture direction
 
