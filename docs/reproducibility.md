@@ -4,6 +4,10 @@
 
 Each run receives an opaque random ID and a file-backed state record at `runs/<run_id>/run.json`. The record contains workflow ID, the validated parameter snapshot, status transitions, timestamps, exit code, a bounded error summary, artifact count, and whether log output was truncated. The snapshot records relative input filenames and analysis parameters, never submitted absolute input paths. Existing records created before this field was added are returned with an empty parameter object.
 
+## Environment dependencies
+
+Python runtime and development dependencies are resolved in the committed `uv.lock`. CI checks that the lock remains consistent with `pyproject.toml` and installs with `uv sync --locked --extra dev`; dependency changes must update both files. This does not yet pin the R/Bioconductor environment: a clean-environment DESeq2 run and recorded R/DESeq2 version pair remain required before claiming end-to-end reproducibility.
+
 ## Input and output provenance
 
 - Input files are selected by relative path beneath `BIOAI_INPUT_ROOT`; symlinks resolving outside that root are rejected.

@@ -15,6 +15,7 @@ on:
       - "tests/**"
       - "examples/deseq2/**"
       - "pyproject.toml"
+      - "uv.lock"
       - ".gitignore"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -53,8 +54,11 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Sync development environment
-        run: uv sync --extra dev
+      - name: Check dependency lock is current
+        run: uv lock --check
+
+      - name: Sync locked development environment
+        run: uv sync --locked --extra dev
 
       - name: Compile Python safety tooling
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
