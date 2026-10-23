@@ -322,18 +322,27 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertIn("metadata_file", {error["field"] for error in result["errors"]})
 
     def test_preflight_validation_rejects_missing_files_without_exposing_paths(self) -> None:
-        payload = {
-            "counts_file": "missing-counts.csv",
-            "metadata_file": "missing-metadata.csv",
-            "condition": "condition",
-            "reference": "control",
-            "contrast": "treatment",
-            "alpha": 0.05,
-        }
-        response = self.client.post("/api/v1/inputs/validate", json=payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()["valid"])
-        self.assertNotIn(str(PROJECT_ROOT), response.text)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            payload = {
+                "counts_file": "missing-counts.csv",
+                "metadata_file": "missing-metadata.csv",
+                "condition": "condition",
+                "reference": "control",
+                "contrast": "treatment",
+                "alpha": 0.05,
+            }
+            with patch("app.main.config", config):
+                response = self.client.post("/api/v1/inputs/validate", json=payload)
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.json()["valid"])
+            self.assertNotIn(str(root), response.text)
 
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)
