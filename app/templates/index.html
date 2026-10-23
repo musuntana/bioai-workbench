@@ -82,6 +82,11 @@
     <p class="muted">Select exactly two runs to compare saved parameters and output checksums.</p>
     <button id="compare-history" type="button">Compare selected runs</button>
     <pre id="comparison-summary" role="status" aria-live="polite">No comparison selected.</pre>
+    <label>Inspect one gene across selected runs
+      <input id="comparison-gene-id" maxlength="200" placeholder="Enter exact gene ID">
+    </label>
+    <button id="compare-single-gene" type="button">Compare gene</button>
+    <p id="single-gene-summary" class="muted" role="status" aria-live="polite"></p>
     <p id="gene-comparison-summary" class="muted" role="status" aria-live="polite"></p>
     <a id="gene-comparison-export" hidden download>Download DEG set comparison CSV</a>
   </section>
@@ -202,6 +207,8 @@
     <p id="ma-summary" class="muted">Mean expression is shown on a log10 scale; log2 fold change is shown on the vertical axis.</p>
     <svg id="ma-plot" viewBox="0 0 900 420" role="img" aria-label="MA plot of log2 fold change against mean expression"></svg>
 
+    <h3>Selected gene</h3>
+    <p id="gene-detail" role="status">Select a gene from the table or plot.</p>
     <h3>Gene table</h3>
     <div class="result-table-wrap">
       <table id="results-table">
@@ -301,6 +308,27 @@
       } catch (error) {
         comparisonSummary.textContent = error.message;
       }
+    });
+    document.getElementById("compare-single-gene").addEventListener("click", async function () {
+      const target = document.getElementById("single-gene-summary");
+      const geneId = document.getElementById("comparison-gene-id").value.trim();
+      if (compareSelection.size !== 2 || !geneId) {
+        target.textContent = "Select two runs and enter an exact gene ID."; return;
+      }
+      const [runA, runB] = [...compareSelection];
+      const params = new URLSearchParams({run_a: runA, run_b: runB, gene_id: geneId});
+      target.textContent = "Comparing gene…";
+      try {
+        const response = await fetch("/api/v1/runs/compare/gene?" + params.toString());
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Comparison unavailable.");
+        const describe = gene => gene ?
+          "log2FC " + formatResultValue("log2FoldChange", gene.log2FoldChange) +
+          ", padj " + formatResultValue("padj", gene.padj) +
+          ", " + (gene.significant ? "significant" : "not significant") : "not present";
+        target.textContent = geneId + " · A: " + describe(result.a) +
+          " · B: " + describe(result.b) + ". " + result.note;
+      } catch (error) { target.textContent = error.message; }
     });
     let activeRunId = null;
     let activeRefreshToken = 0;
@@ -535,6 +563,32 @@
     const resultsPanel = document.getElementById("results-panel");
     const resultsSummary = document.getElementById("results-summary");
     const resultsTableBody = document.getElementById("results-table-body");
+    const geneDetail = document.getElementById("gene-detail");
+    let geneDetailToken = 0;
+    async function selectGene(geneId) {
+      const runId = activeResultsRunId;
+      if (!runId) return;
+      const token = ++geneDetailToken;
+      geneDetail.textContent = "Loading " + geneId + "…";
+      const query = new URLSearchParams({
+        padj_max: document.getElementById("result-padj-max").value || "0.05",
+        min_abs_log2fc: document.getElementById("result-min-abs-log2fc").value || "1"
+      });
+      try {
+        const response = await fetch("/api/v1/runs/" + encodeURIComponent(runId) +
+          "/genes/" + encodeURIComponent(geneId) + "?" + query.toString());
+        const data = await response.json();
+        if (token !== geneDetailToken || runId !== activeResultsRunId) return;
+        if (!response.ok) throw new Error(data.detail || "Gene unavailable.");
+        const gene = data.gene;
+        geneDetail.textContent = ["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"]
+          .map(field => field + ": " + formatResultValue(field, gene[field])).join(" · ") +
+          " · " + (gene.significant ? "significant" : "not significant");
+      } catch (error) {
+        if (token === geneDetailToken) geneDetail.textContent = error.message;
+      }
+    }
+
     const resultsPageSummary = document.getElementById("results-page-summary");
     const resultsPrevious = document.getElementById("results-previous");
     const resultsNext = document.getElementById("results-next");
@@ -641,6 +695,16 @@
           point.log2FoldChange.toFixed(3) + " · padj " + formatResultValue("padj", point.padj) +
           " · " + (point.significant ? "significant" : "not significant");
         circle.appendChild(title);
+        circle.setAttribute("tabindex", "0");
+        circle.setAttribute("role", "button");
+        circle.setAttribute("aria-label", "View gene " + point.gene_id);
+        circle.addEventListener("click", () => selectGene(point.gene_id));
+        circle.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectGene(point.gene_id);
+          }
+        });
       }
 
       volcanoSummary.textContent = "Plotting " + validPoints.length + " of " +
@@ -728,6 +792,16 @@
           point.log2FoldChange.toFixed(3) + " · " +
           (point.significant ? "significant" : "not significant");
         circle.appendChild(title);
+        circle.setAttribute("tabindex", "0");
+        circle.setAttribute("role", "button");
+        circle.setAttribute("aria-label", "View gene " + point.gene_id);
+        circle.addEventListener("click", () => selectGene(point.gene_id));
+        circle.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            selectGene(point.gene_id);
+          }
+        });
       }
 
       maSummary.textContent = "Plotting " + validPoints.length + " of " +
@@ -753,6 +827,11 @@
       for (const row of payload.rows) {
         const tr = document.createElement("tr");
         if (row.significant) tr.className = "significant-row";
+        tr.setAttribute("tabindex", "0");
+        tr.addEventListener("click", () => selectGene(row.gene_id));
+        tr.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") selectGene(row.gene_id);
+        });
         for (const [field] of fields) {
           const td = document.createElement("td");
           td.textContent = formatResultValue(field, row[field]);
