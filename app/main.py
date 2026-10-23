@@ -777,6 +777,17 @@ def get_run_results(
     }
 
 
+@app.get("/api/v1/runs/compare")
+def compare_run_snapshots(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+) -> dict[str, Any]:
+    """Compare saved run parameters and manifested artifact hashes."""
+    from app.run_compare import compare_runs
+
+    return compare_runs(run_manager, run_a, run_b)
+
+
 @app.get("/api/v1/runs/{run_id}/artifacts/{artifact_path:path}", include_in_schema=True)
 def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
     """Download a file only when it is listed in the run's artifact manifest."""
