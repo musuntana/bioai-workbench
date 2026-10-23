@@ -49,3 +49,21 @@ def test_rejects_invalid_or_missing_runs(run_a, run_b, status):
         with pytest.raises(HTTPException) as caught:
             compare_runs(manager, run_a, run_b)
         assert caught.value.status_code == status
+
+
+def test_input_provenance_compares_hashes_and_preserves_unknown_for_legacy_runs():
+    with TemporaryDirectory() as temporary:
+        manager = _manager(Path(temporary))
+        a, b = "a" * 32, "b" * 32
+        manager.store.create(a, "deseq2-basic")
+        manager.store.create(b, "deseq2-basic")
+        manager.store.update(a, input_provenance={
+            "counts": {"sha256": "1" * 64, "filename": "counts.csv", "size_bytes": 12},
+            "metadata": {"sha256": "2" * 64, "filename": "meta.csv", "size_bytes": 12},
+        })
+        manager.store.update(b, input_provenance={
+            "counts": {"sha256": "1" * 64, "filename": "renamed.csv", "size_bytes": 12},
+        })
+        result = compare_runs(manager, a, b)
+        assert result["inputs"]["counts"]["same_content"] is True
+        assert result["inputs"]["metadata"]["same_content"] is None
