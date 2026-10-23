@@ -86,6 +86,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `GET /api/v1/runs/{run_id}/artifacts` — relative artifact names, byte sizes, and SHA-256 checksums.
 - `GET /api/v1/runs/{run_id}/artifacts/{artifact_path}` — download a manifest-listed artifact.
 - `GET /api/v1/runs/{run_id}/results` — preview, search, sort, paginate, and filter the verified DESeq2 result table; returns capped volcano-plot points.
+- `GET /api/v1/runs/{run_id}/results/export` — download all rows matching the table filters as a CSV, preserving the original result values.
 
 See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
 

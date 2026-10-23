@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterator
 import hashlib
 import hmac
 import io
@@ -824,9 +825,9 @@ def export_run_results(
         sort_order=sort_order,
     )
 
-    def iter_csv() -> Any:
+    def iter_csv() -> Iterator[str]:
         buffer = io.StringIO(newline="")
-        writer = csv.writer(buffer, lineterminator="\\n")
+        writer = csv.writer(buffer, lineterminator="\n")
         writer.writerow(columns)
         yield buffer.getvalue()
         buffer.seek(0)

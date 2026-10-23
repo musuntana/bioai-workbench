@@ -75,6 +75,7 @@
 - [x] Add bounded CSV preview for selected Counts/Metadata inputs, with path containment and malformed-row checks.
 - [x] Add manifest-verified DESeq2 result preview API with search, significance filtering, sorting, pagination, and capped volcano-plot points.
 - [x] Add result table, volcano plot, and MA plot to the run detail UI; retain the original checksummed CSV download.
+- [x] Export all filtered DESeq2 results to CSV using the same verified artifact and selection criteria as the results table.
 - [ ] Add optional local model support only if it improves a measured use case.
 
 ## Public release gate for migrated scripts
