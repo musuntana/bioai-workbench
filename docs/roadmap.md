@@ -72,6 +72,7 @@
 - [x] Expose structured validation results and validation errors in a stable response contract.
 - [x] Add a run-history UI with status filtering and links into run details after the history API stabilized.
 - [x] Add local CSV upload/discovery endpoints and UI selection for counts/metadata inputs, with size, filename, CSV-shape, and no-overwrite checks.
+- [x] Add bounded CSV preview for selected Counts/Metadata inputs, with path containment and malformed-row checks.
 - [x] Add manifest-verified DESeq2 result preview API with search, significance filtering, sorting, pagination, and capped volcano-plot points.
 - [x] Add a result table and responsive volcano plot to the run detail UI; retain the original checksummed CSV download.
 - [ ] Add optional local model support only if it improves a measured use case.

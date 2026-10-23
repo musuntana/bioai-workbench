@@ -14,6 +14,15 @@ Interactive OpenAPI documentation is available at `http://127.0.0.1:8000/docs`.
 curl http://127.0.0.1:8000/api/v1/workflows
 ```
 
+## Preview an input CSV
+
+Preview a bounded number of rows from an input file under `BIOAI_INPUT_ROOT` before validating or submitting a run:
+
+```bash
+curl "http://127.0.0.1:8000/api/v1/inputs/preview?filename=demo/counts.csv&limit=8"
+```
+
+`filename` must be a relative CSV path inside the configured input root. `limit` is between 1 and 20 (default 8). The response returns relative path, file size, columns, sample rows, and a `has_more` flag. Files larger than 25 MiB, malformed rows, traversal paths, and files outside the input root are rejected. Preview content may contain research identifiers, so keep the unauthenticated service bound to localhost.
 ## Submit a DESeq2 run
 
 Input files must already exist under `BIOAI_INPUT_ROOT` (default `data/inputs/`). Use relative paths; absolute paths, traversal segments, non-CSV extensions, and symlinks escaping the root are rejected.
