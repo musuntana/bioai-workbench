@@ -59,7 +59,7 @@ Optional integration smoke test (requires the same dependencies):
 bash scripts/smoke_test_deseq2.sh
 ```
 
-The example uses generated synthetic counts only. The smoke test covers successful artifact creation, manifest path checks, and expected failures for mismatched sample IDs and negative counts. It has not yet been runtime-verified in an R/Bioconductor environment; treat the result as pending until it runs successfully.
+The example uses generated synthetic counts only. The smoke test covers successful artifact creation, manifest path checks, and expected failures for mismatched sample IDs, missing condition metadata, negative/non-integer counts, duplicate gene IDs, insufficient replicates, and integer overflow. It has not yet been runtime-verified in an R/Bioconductor environment; treat the result as pending until it runs successfully.
 
 ## Architecture direction
 
