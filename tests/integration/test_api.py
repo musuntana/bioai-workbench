@@ -352,12 +352,69 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertEqual(response.json()["error"]["code"], "VALIDATION_ERROR")
 
+
+    def test_input_preview_returns_bounded_rows_without_absolute_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            nested = config.input_root / "demo"
+            nested.mkdir()
+            (nested / "counts.csv").write_text(
+                "gene_id,s1,s2\ngene_a,1,2\ngene_b,3,4\ngene_c,5,6\n",
+                encoding="utf-8",
+            )
+            (config.input_root / "malformed.csv").write_text(
+                "gene_id,s1,s2\ngene_a,1\n",
+                encoding="utf-8",
+            )
+            with patch("app.main.config", config):
+                response = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "demo/counts.csv", "limit": 2},
+                )
+                traversal = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "../secret.csv"},
+                )
+                dot_segment = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "demo/../malformed.csv"},
+                )
+                nul_path = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "bad\x00.csv"},
+                )
+                malformed = self.client.get(
+                    "/api/v1/inputs/preview",
+                    params={"filename": "malformed.csv"},
+                )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["path"], "demo/counts.csv")
+            self.assertEqual(payload["columns"], ["gene_id", "s1", "s2"])
+            self.assertEqual(payload["rows"], [["gene_a", "1", "2"], ["gene_b", "3", "4"]])
+            self.assertTrue(payload["has_more"])
+            self.assertNotIn(str(root), response.text)
+            self.assertEqual(traversal.status_code, 404)
+            self.assertEqual(dot_segment.status_code, 404)
+            self.assertEqual(nul_path.status_code, 404)
+            self.assertEqual(malformed.status_code, 422)
+
     def test_home_page_exposes_input_upload_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertIn('id="input-upload-file"', response.text)
         self.assertIn('id="counts-file"', response.text)
         self.assertIn('id="metadata-file"', response.text)
+        self.assertIn('id="preview-inputs"', response.text)
+        self.assertIn('id="input-preview-content"', response.text)
+        self.assertIn('/api/v1/inputs/preview?', response.text)
         self.assertIn('id="validate-inputs"', response.text)
         self.assertIn('/api/v1/inputs/validate', response.text)
         self.assertIn('id="results-panel"', response.text)

@@ -213,6 +213,16 @@ def workflows() -> dict[str, list[dict[str, Any]]]:
 
 def _resolve_validation_input(relative_name: str, field: str, errors: list[dict[str, str]]) -> Path | None:
     """Resolve a request input under the configured root without leaking host paths."""
+    if (
+        not relative_name
+        or "\x00" in relative_name
+        or "\\" in relative_name
+        or relative_name.startswith("/")
+        or re.match(r"^[A-Za-z]:", relative_name)
+        or any(part in {"", ".", ".."} for part in relative_name.split("/"))
+    ):
+        errors.append({"field": field, "message": "Input must be a safe relative CSV path."})
+        return None
     root = config.input_root.resolve()
     try:
         resolved = (root / relative_name).resolve(strict=True)
@@ -223,6 +233,64 @@ def _resolve_validation_input(relative_name: str, field: str, errors: list[dict[
         errors.append({"field": field, "message": "Input must be a CSV file inside BIOAI_INPUT_ROOT."})
         return None
     return resolved
+
+
+
+@app.get("/api/v1/inputs/preview")
+def preview_input_file(
+    filename: str = Query(min_length=1, max_length=240),
+    limit: int = Query(default=8, ge=1, le=20),
+) -> dict[str, Any]:
+    """Preview a bounded number of CSV rows without exposing absolute paths."""
+    errors: list[dict[str, str]] = []
+    input_path = _resolve_validation_input(filename, "filename", errors)
+    if input_path is None:
+        raise HTTPException(status_code=404, detail="Input CSV not found.")
+    try:
+        size_bytes = input_path.stat().st_size
+    except OSError as exc:
+        raise HTTPException(status_code=404, detail="Input CSV not found.") from exc
+    if size_bytes > MAX_INPUT_FILE_BYTES:
+        raise HTTPException(status_code=413, detail="Input CSV exceeds the preview size limit.")
+
+    try:
+        with input_path.open("r", encoding="utf-8-sig", newline="") as stream:
+            reader = csv.reader(stream, strict=True)
+            columns = next(reader, None)
+            if (
+                columns is None
+                or len(columns) < 2
+                or any(not column.strip() for column in columns)
+                or len({column.strip().casefold() for column in columns}) != len(columns)
+            ):
+                raise HTTPException(status_code=422, detail="Input CSV has an invalid header.")
+            rows: list[list[str]] = []
+            has_more = False
+            for row in reader:
+                if not row or all(not value.strip() for value in row):
+                    continue
+                if len(row) != len(columns):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Input CSV rows must have the same number of columns as the header.",
+                    )
+                if len(rows) >= limit:
+                    has_more = True
+                    break
+                rows.append(row)
+    except HTTPException:
+        raise
+    except (UnicodeDecodeError, csv.Error, OSError) as exc:
+        raise HTTPException(status_code=422, detail="Input file is not a readable UTF-8 CSV.") from exc
+
+    return {
+        "path": filename,
+        "size_bytes": size_bytes,
+        "columns": columns,
+        "rows": rows,
+        "preview_limit": limit,
+        "has_more": has_more,
+    }
 
 
 @app.post("/api/v1/inputs/validate")
