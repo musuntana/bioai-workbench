@@ -826,6 +826,53 @@ def _filter_sort_result_rows(
     return filtered_rows
 
 
+@app.get("/api/v1/runs/{run_id}/genes/{gene_id}")
+def get_gene_detail(
+    run_id: str,
+    gene_id: str,
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1, ge=0, le=1000),
+) -> dict[str, Any]:
+    """Return exact gene statistics from the verified run artifact."""
+    if not gene_id or len(gene_id) > 200:
+        raise HTTPException(status_code=422, detail="Gene ID must contain 1–200 characters.")
+    _, rows = _load_verified_result_rows(run_id, padj_max, min_abs_log2fc)
+    matches = [row for row in rows if row["gene_id"] == gene_id]
+    if len(matches) > 1:
+        raise HTTPException(status_code=409, detail="Duplicate gene IDs prevent detail lookup.")
+    if not matches:
+        raise HTTPException(status_code=404, detail="Gene not found in this run.")
+    return {"run_id": run_id, "gene": matches[0], "padj_max": padj_max,
+            "min_abs_log2fc": min_abs_log2fc}
+
+
+@app.get("/api/v1/runs/compare/gene")
+def compare_single_gene(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+    gene_id: str = Query(..., min_length=1, max_length=200),
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1, ge=0, le=1000),
+) -> dict[str, Any]:
+    """Compare one gene in two independently verified DESeq2 runs."""
+    import re
+
+    if not re.fullmatch(r"[a-f0-9]{32}", run_a) or not re.fullmatch(r"[a-f0-9]{32}", run_b):
+        raise HTTPException(status_code=422, detail="Invalid run ID.")
+    if run_a == run_b:
+        raise HTTPException(status_code=422, detail="Select two different runs.")
+    results = {}
+    for label, run_id in (("run_a", run_a), ("run_b", run_b)):
+        _, rows = _load_verified_result_rows(run_id, padj_max, min_abs_log2fc)
+        matches = [row for row in rows if row["gene_id"] == gene_id]
+        if len(matches) > 1:
+            raise HTTPException(status_code=409, detail="Duplicate gene IDs prevent comparison.")
+        results[label] = matches[0] if matches else None
+    return {"gene_id": gene_id, "run_a": run_a, "run_b": run_b,
+            "a": results["run_a"], "b": results["run_b"],
+            "note": "Different significance classifications do not establish a statistical difference between runs. Confirm contrast direction before comparing log2FC."}
+
+
 @app.get("/api/v1/runs/{run_id}/results")
 def get_run_results(
     run_id: str,
