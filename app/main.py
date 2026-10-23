@@ -72,7 +72,7 @@ def submit_run(request: RunRequest, background_tasks: BackgroundTasks) -> dict[s
 def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    status: RunState | None = Query(default=None),
+    status: RunState | None = None,
 ) -> dict[str, Any]:
     return store.list_runs(limit=limit, offset=offset, status=status)
 
