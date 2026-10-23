@@ -132,4 +132,4 @@ utils::write.csv(counts, args[[2]], row.names = FALSE, quote = FALSE)
 expect_failure "integer-overflow" "supported integer range" \
   "$INPUT_DIR/metadata.csv" "$INPUT_DIR/counts-overflow.csv"
 
-echo "DESeq2 smoke test passed: valid input, expected artifacts, path-free manifest, and six invalid-input cases."
+echo "DESeq2 smoke test passed: valid input, expected artifacts, path-free manifest, and seven invalid-input cases."

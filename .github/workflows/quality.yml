@@ -2,11 +2,19 @@ name: Targeted quality gates
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".github/workflows/quality.yml"
       - "scripts/**"
+      - "app/**"
+      - "agent/**"
+      - "runtime/**"
+      - "artifacts/**"
+      - "workflows/**"
+      - "skills/**"
       - "tests/**"
       - "examples/deseq2/**"
+      - "pyproject.toml"
       - ".gitignore"
       - "README.md"
       - "CONTRIBUTING.md"
@@ -40,14 +48,25 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install project and development dependencies
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync development environment
+        run: uv sync --extra dev
+
       - name: Compile Python safety tooling
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
 
       - name: Check smoke-test shell syntax
         run: bash -n scripts/smoke_test_deseq2.sh
 
-      - name: Run scanner unit tests
-        run: python -m unittest discover -s tests -v
+      - name: Lint Python packages and tests
+        run: uv run ruff check app agent runtime artifacts tests
+
+      - name: Run unit, integration, and workflow contract tests
+        run: uv run pytest
 
       - name: Scan source and configuration for disclosure patterns
         run: python scripts/audit_public_release.py

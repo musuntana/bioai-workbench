@@ -1,0 +1,41 @@
+id: deseq2-basic
+name: Differential expression (DESeq2)
+version: 0.1.0
+runtime: Rscript
+entrypoint: workflows/deseq2/run.R
+compatibility_entrypoint: scripts/run_deseq2.R
+inputs:
+  counts_file:
+    format: csv
+    location: relative path beneath BIOAI_INPUT_ROOT
+    schema: first column gene_id; remaining columns are sample IDs
+  metadata_file:
+    format: csv
+    location: relative path beneath BIOAI_INPUT_ROOT
+    schema: sample_id plus the selected condition column
+parameters:
+  condition:
+    type: string
+    default: condition
+  reference:
+    type: string
+    default: control
+  contrast:
+    type: string
+    default: treatment
+  alpha:
+    type: number
+    default: 0.05
+    exclusiveMinimum: 0
+    exclusiveMaximum: 1
+outputs:
+  - differential_expression_all.csv
+  - differential_expression_significant.csv
+  - run_manifest.tsv
+  - session_info.txt
+  - artifact_manifest.json
+execution:
+  timeout_env: BIOAI_MAX_RUN_SECONDS
+  max_log_bytes_env: BIOAI_MAX_LOG_BYTES
+  shell: false
+  external_model_calls: disabled

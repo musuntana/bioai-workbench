@@ -57,6 +57,20 @@ class PublicReleaseAuditTests(unittest.TestCase):
                 findings,
             )
 
+    def test_scans_html_and_javascript_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            private_path = "/" + "Users/alice/private-config"
+            (root / "index.html").write_text(
+                f'<script>const config = "{private_path}";</script>\n',
+                encoding="utf-8",
+            )
+            findings = AUDIT.scan_root(root)
+            self.assertIn(
+                ("index.html", 1, "personal_or_data_absolute_path"),
+                findings,
+            )
+
     def test_flags_prohibited_data_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

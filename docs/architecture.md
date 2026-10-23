@@ -2,68 +2,83 @@
 
 ## Goal
 
-Provide a reliable execution workbench for established bioinformatics analyses. The first release proves one workflow end to end before adding a general-purpose agent or a broad UI.
+Provide a local-first workbench for running established bioinformatics analyses through a validated API and inspectable run records. The first vertical is a reproducible two-condition DESeq2 workflow. The architecture deliberately keeps execution independent from an LLM.
 
-## High-level flow
+## End-to-end flow
 
 ```text
-User request / CLI
-       |
-       v
-Validated workflow specification
-       |
-       v
-Workflow engine (candidate: Snakemake)
-       |
-       v
-Isolated R/Python task
-       |
-       +--> structured logs
-       +--> tool/session versions
-       +--> output files
-       +--> run manifest and checks
+Browser / API client
+        |
+        v
+FastAPI request schema
+        |
+        v
+Registered workflow ID + validated parameters
+        |
+        v
+RunStore creates a queued run record
+        |
+        v
+RunManager checks input root and runtime limits
+        |
+        v
+Rscript -> DESeq2 workflow
+        |
+        +--> bounded run.log
+        +--> run state and exit status
+        +--> result CSVs + session information
+        +--> input/output fingerprints
+        +--> SHA-256 artifact manifest
 ```
 
-An optional agent may later draft a workflow specification, explain errors, or suggest tools. It does not execute arbitrary generated code directly and cannot skip validation.
+An optional agent adapter may propose a workflow plan, but it does not execute generated code. The user submits a validated plan through the same API used by deterministic callers.
 
 ## Component boundaries
 
-### 1. Workflow specification
+### 1. API and UI — `app/`
 
-A versioned, schema-validated description of the analysis: workflow name/version, input paths, parameter values, output location, and resource requirements. User data paths are runtime inputs, not hard-coded defaults.
+FastAPI exposes health, workflow discovery, run submission, run status, logs, and artifact metadata. The static UI is intentionally small and calls the same HTTP contracts as other clients. API schemas reject unknown fields and absolute/traversal input paths.
 
-### 2. Analysis tools
+### 2. Workflow registry — `app/registry.py`
 
-Use existing statistical packages and domain tools. The first candidate is DESeq2 on synthetic count data. Algorithm implementations are not being recreated.
+Only registered workflow IDs are accepted. A request cannot provide an executable path or arbitrary shell command. The initial registry contains `deseq2-basic`; the human-readable contract is in `workflows/deseq2/workflow.yaml`.
 
-### 3. Workflow engine
+### 3. Analysis workflow — `workflows/deseq2/`
 
-Evaluate Snakemake first because the initial product is a dependency graph of R/Python tasks with reproducible execution. Do not introduce a custom scheduler until requirements demonstrate a gap.
+The canonical R entrypoint uses DESeq2. It validates raw counts and sample metadata, runs the statistical package, and writes full/significant result tables, session information, and a run manifest. `scripts/run_deseq2.R` remains a compatibility wrapper.
 
-### 4. Execution and provenance
+### 4. Agent and skill contract — `agent/`, `skills/`
 
-Every run should record:
-- run ID and status;
-- workflow and code version;
-- input file fingerprints (not copies of sensitive inputs);
-- parameters and dependency/tool versions;
-- timestamps, exit code, and bounded logs;
-- output manifest and validation results.
+The deterministic planner maps a small set of task names to the registered DESeq2 workflow and validates proposed parameters. Every plan requires explicit approval. No model provider is required. The skill file documents the task, required inputs, and stop conditions.
 
-Sensitive input content should not be copied into logs or manifests.
+### 5. Runtime — `runtime/`
 
-### 5. Agent adapter (later)
+The first runtime is local and file-backed. It creates opaque run IDs, atomically persists state, resolves relative input files under `BIOAI_INPUT_ROOT`, launches subprocesses without a shell, passes a restricted environment, enforces wall-clock and log-size limits, and checks expected output files.
 
-Keep the agent behind an interface. Evaluate Biomni and ClawBio with a narrow proof of concept. Any generated plan must map to registered workflow/tool IDs and schema-validated parameters. No arbitrary shell commands by default.
+This is **not** a hardened sandbox. It is designed for a single trusted local user. Do not expose the unauthenticated API to untrusted networks. Use OS/container isolation before running untrusted workflows.
 
-### 6. API/UI (later)
+### 6. Artifacts and provenance — `artifacts/`
 
-Add an API or UI only after the CLI workflow and provenance contract are stable. The first interface should make it easy to inspect parameters, progress, logs, outputs, and validation status.
+The runtime records relative artifact paths, byte sizes, and SHA-256 checksums. The DESeq2 manifest also records tool versions, parameters, and input/output fingerprints. Raw input files are not copied into run directories, and absolute paths are omitted from run-state and artifact metadata.
 
-## Initial non-goals
+### 7. Tests and quality gates
 
-- replacing DESeq2, Seurat, Snakemake, or other mature tools;
-- autonomous clinical interpretation;
-- uploading raw data to external LLMs by default;
-- a multi-agent architecture before one workflow is reliable;
-- migrating entire private repositories into the public project.
+- `tests/unit/`: state, path-validation, planner, and manifest tests.
+- `tests/integration/`: API contract tests without invoking R.
+- `tests/workflow/`: registered workflow and compatibility-entrypoint checks.
+- `scripts/smoke_test_deseq2.sh`: optional real R/DESeq2 integration test with synthetic fixtures.
+- GitHub Actions runs lightweight Python checks for relevant pull requests; the dependency-heavy R integration job remains opt-in.
+
+## Reproducibility and failure behavior
+
+A run is successful only when the child exits zero and all expected artifacts exist. Failure and timeout states include a bounded log and a non-sensitive status summary. Each artifact manifest is generated after the workflow completes and intentionally does not hash itself.
+
+See [the reproducibility contract](reproducibility.md) for details and limits.
+
+## Next architecture decisions
+
+- Evaluate Snakemake/Nextflow when the workflow graph grows beyond one process.
+- Add a pinned R/Bioconductor environment and record its tested version pair.
+- Introduce a container or OS-level sandbox before accepting untrusted code.
+- Add a persistent queue/database only when multi-process deployment or recovery requirements justify it.
+- Add a model provider only after measuring a task where planning materially helps; external calls must remain opt-in.
