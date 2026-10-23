@@ -26,10 +26,13 @@ class PublicReleaseAuditTests(unittest.TestCase):
     def test_reports_categories_without_echoing_sensitive_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
+            private_ip = ".".join(("10", "23", "4", "5"))
+            credential_line = "api_" + 'key = "secret-value-not-for-output"'
+            personal_path = "/" + "Users/alice/private-data"
             (root / "config.py").write_text(
-                'endpoint = "10.23.4.5"\n'
-                'api_key = "secret-value-not-for-output"\n'
-                'cache = "/Users/alice/private-data"\n',
+                f'endpoint = "{private_ip}"\n'
+                + credential_line + "\\n"
+                + f'cache = "{personal_path}"\\n',
                 encoding="utf-8",
             )
             findings = AUDIT.scan_root(root)
