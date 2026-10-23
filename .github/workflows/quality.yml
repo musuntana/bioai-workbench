@@ -8,7 +8,10 @@ on:
       - "tests/**"
       - "examples/deseq2/**"
       - ".gitignore"
+      - "README.md"
+      - "CONTRIBUTING.md"
       - "SECURITY.md"
+      - "docs/**"
   workflow_dispatch:
     inputs:
       run_r_integration:
