@@ -829,6 +829,10 @@
         runLog.textContent = payload.text || "Waiting for workflow output…";
       }
       const status = await statusResponse.json();
+      const versions = status.environment_provenance || {};
+      document.getElementById("run-environment").textContent = Object.keys(versions).length
+        ? Object.keys(versions).sort().map(key => key + ": " + versions[key]).join("\n")
+        : "Not recorded for this run.";
       runSummary.textContent = "Run " + status.run_id + " · " + status.status +
         (status.error_message ? " · " + status.error_message : "");
       if (["succeeded", "failed", "timed_out"].includes(status.status)) {
