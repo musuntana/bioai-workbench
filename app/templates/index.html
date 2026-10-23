@@ -40,6 +40,10 @@
     #volcano-plot .volcano-point, #ma-plot .volcano-point { stroke: currentColor; stroke-width: .35; opacity: .78; }
     #volcano-plot .volcano-point.significant, #ma-plot .volcano-point.significant { fill: #d9485f; }
     #volcano-plot .volcano-point.nonsignificant, #ma-plot .volcano-point.nonsignificant { fill: #7296c8; }
+    #volcano-plot .volcano-point.is-selected, #ma-plot .volcano-point.is-selected {
+      stroke: currentColor; stroke-width: 2.5; opacity: 1;
+    }
+    #results-table tbody tr.selected-row { outline: 2px solid currentColor; outline-offset: -2px; }
     .volcano-legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; }
     .legend-dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .3rem; }
     .legend-significant { background: #d9485f; }
@@ -193,6 +197,7 @@
         Significant genes only
       </label>
       <div><button id="refresh-results" type="button">Apply filters</button></div>
+      <div><button id="locate-result-gene" type="button">Locate exact gene</button></div>
     </div>
 
     <h3>Volcano plot</h3>
@@ -208,7 +213,7 @@
     <svg id="ma-plot" viewBox="0 0 900 420" role="img" aria-label="MA plot of log2 fold change against mean expression"></svg>
 
     <h3>Selected gene</h3>
-    <p id="gene-detail" role="status">Select a gene from the table or plot.</p>
+    <p id="gene-detail" role="status">Select a gene from the table or plot, or enter its exact ID in Search gene ID and choose Locate exact gene.</p>
     <h3>Gene table</h3>
     <div class="result-table-wrap">
       <table id="results-table">
@@ -565,6 +570,7 @@
     const resultsTableBody = document.getElementById("results-table-body");
     const geneDetail = document.getElementById("gene-detail");
     let geneDetailToken = 0;
+    let focusedGeneId = null;
     async function selectGene(geneId) {
       const runId = activeResultsRunId;
       if (!runId) return;
@@ -584,6 +590,10 @@
         geneDetail.textContent = ["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"]
           .map(field => field + ": " + formatResultValue(field, gene[field])).join(" · ") +
           " · " + (gene.significant ? "significant" : "not significant");
+        focusedGeneId = geneId;
+        document.getElementById("result-search").value = geneId;
+        document.getElementById("result-significant-only").checked = false;
+        await loadRunResults(runId, 0);
       } catch (error) {
         if (token === geneDetailToken) geneDetail.textContent = error.message;
       }
@@ -687,8 +697,9 @@
         const circle = element("circle", {
           cx: xScale(point.log2FoldChange),
           cy: yScale(Math.min(yMax, yValue)),
-          r: point.significant ? 3.4 : 2.7,
-          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant")
+          r: point.gene_id === focusedGeneId ? 6 : (point.significant ? 3.4 : 2.7),
+          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant") +
+            (point.gene_id === focusedGeneId ? " is-selected" : "")
         });
         const title = document.createElementNS(SVG_NS, "title");
         title.textContent = point.gene_id + " · log2FC " +
@@ -783,8 +794,9 @@
         const circle = element("circle", {
           cx: xScale(xValue),
           cy: yScale(yValue),
-          r: point.significant ? 3.4 : 2.7,
-          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant")
+          r: point.gene_id === focusedGeneId ? 6 : (point.significant ? 3.4 : 2.7),
+          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant") +
+            (point.gene_id === focusedGeneId ? " is-selected" : "")
         });
         const title = document.createElementNS(SVG_NS, "title");
         title.textContent = point.gene_id + " · mean " +
@@ -827,6 +839,7 @@
       for (const row of payload.rows) {
         const tr = document.createElement("tr");
         if (row.significant) tr.className = "significant-row";
+        if (row.gene_id === focusedGeneId) tr.classList.add("selected-row");
         tr.setAttribute("tabindex", "0");
         tr.addEventListener("click", () => selectGene(row.gene_id));
         tr.addEventListener("keydown", event => {
@@ -848,6 +861,13 @@
       resultsNext.disabled = resultOffset + payload.rows.length >= resultTotal;
       drawVolcanoPlot(payload.plot_points, summary);
       drawMAPlot(payload.ma_points, summary);
+      if (focusedGeneId && payload.focus && payload.focus.found) {
+        if (!payload.focus.volcano_plottable || !payload.focus.ma_plottable) {
+          resultsSummary.textContent += " · Selected gene has missing coordinates in " +
+            (!payload.focus.volcano_plottable ? "volcano " : "") +
+            (!payload.focus.ma_plottable ? "MA " : "") + "plot.";
+        }
+      }
     }
 
     async function loadRunResults(runId, offset) {
@@ -860,6 +880,7 @@
         offset: String(offset),
         q: document.getElementById("result-search").value,
         significant_only: String(document.getElementById("result-significant-only").checked),
+        focus_gene: focusedGeneId || "",
         padj_max: document.getElementById("result-padj-max").value || "0.05",
         min_abs_log2fc: document.getElementById("result-min-abs-log2fc").value || "0",
         sort_by: document.getElementById("result-sort-by").value,
@@ -879,7 +900,21 @@
       resultsExportLink.hidden = false;
     }
 
+    document.getElementById("locate-result-gene").addEventListener("click", function () {
+      const exactGene = document.getElementById("result-search").value.trim();
+      if (exactGene) selectGene(exactGene);
+      else geneDetail.textContent = "Enter an exact gene ID to locate.";
+    });
+    document.getElementById("result-search").addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("locate-result-gene").click();
+      }
+    });
     document.getElementById("refresh-results").addEventListener("click", function () {
+      focusedGeneId = null;
+      geneDetailToken += 1;
+      geneDetail.textContent = "Select a gene from the table or plot.";
       if (activeResultsRunId) loadRunResults(activeResultsRunId, 0).catch(error => {
         resultsSummary.textContent = "Results unavailable: " + error.message;
       });
@@ -1018,6 +1053,9 @@
       resultsPanel.hidden = true;
       activeResultsRunId = null;
       activeResultsRequestToken += 1;
+      geneDetailToken += 1;
+      focusedGeneId = null;
+      geneDetail.textContent = "Select a gene from the table or plot.";
       resultsTableBody.textContent = "";
       resultsExportLink.hidden = true;
       resultsExportLink.removeAttribute("href");
