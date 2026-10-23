@@ -508,6 +508,17 @@ def list_runs(
     return store.list_runs(limit=limit, offset=offset, status=status)
 
 
+@app.get("/api/v1/runs/compare")
+def compare_run_snapshots(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+) -> dict[str, Any]:
+    """Compare saved run parameters and manifested artifact hashes."""
+    from app.run_compare import compare_runs
+
+    return compare_runs(run_manager, run_a, run_b)
+
+
 @app.get("/api/v1/runs/{run_id}", response_model=RunStatus)
 def get_run(run_id: str) -> dict[str, Any]:
     try:
@@ -775,17 +786,6 @@ def get_run_results(
         "plot_points": plot_points,
         "ma_points": ma_points,
     }
-
-
-@app.get("/api/v1/runs/compare")
-def compare_run_snapshots(
-    run_a: str = Query(..., min_length=32, max_length=32),
-    run_b: str = Query(..., min_length=32, max_length=32),
-) -> dict[str, Any]:
-    """Compare saved run parameters and manifested artifact hashes."""
-    from app.run_compare import compare_runs
-
-    return compare_runs(run_manager, run_a, run_b)
 
 
 @app.get("/api/v1/runs/{run_id}/artifacts/{artifact_path:path}", include_in_schema=True)
