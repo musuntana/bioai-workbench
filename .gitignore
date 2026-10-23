@@ -1,0 +1,59 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+config/local.*
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
+renv/library/
+renv/staging/
+
+# Local research data and outputs
+data/raw/
+data/private/
+data/identifiable/
+results/
+artifacts/
+runs/
+*.rds
+*.RDS
+*.rda
+*.RData
+*.h5ad
+*.h5
+*.loom
+*.fastq
+*.fq
+*.bam
+*.bai
+*.vcf
+*.vcf.gz
+*.mtx
+*.tsv.gz
+
+# Logs and machine-specific files
+*.log
+.DS_Store
+Thumbs.db
