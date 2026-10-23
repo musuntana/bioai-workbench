@@ -14,7 +14,7 @@ usage <- function() {
     "--reference <reference-level>",
     "--contrast <contrast-level>",
     "--outdir <output-directory>",
-    "[--alpha <0..1>",
+    "[--alpha <0..1>]",
     "",
     "Counts CSV: first column is gene_id; remaining columns are sample IDs.",
     "Metadata CSV: required sample_id column plus the selected condition column.",
