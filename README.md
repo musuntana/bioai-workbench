@@ -21,37 +21,37 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), R, and a Bioconduc
 
 ### 1. Install the Python environment
 
-\`\`\`bash
+```bash
 uv sync --extra dev
-\`\`\`
+```
 
 ### 2. Install DESeq2
 
 Run in R:
 
-\`\`\`r
+```r
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
 BiocManager::install("DESeq2")
-\`\`\`
+```
 
 ### 3. Generate synthetic input files
 
-\`\`\`bash
+```bash
 mkdir -p data/inputs/demo
 Rscript examples/deseq2/generate_synthetic_data.R data/inputs/demo
-\`\`\`
+```
 
-The generated fixture is synthetic. The API accepts only relative CSV paths beneath \`BIOAI_INPUT_ROOT\`, which defaults to \`data/inputs/\`.
+The generated fixture is synthetic. The API accepts only relative CSV paths beneath `BIOAI_INPUT_ROOT`, which defaults to `data/inputs/`.
 
 ### 4. Start the local workbench
 
-\`\`\`bash
+```bash
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
-\`\`\`
+```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Use \`demo/counts.csv\` and \`demo/metadata.csv\`, then confirm the condition column, reference, and contrast.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Use `demo/counts.csv` and `demo/metadata.csv`, then confirm the condition column, reference, and contrast.
 
 The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network.
 
@@ -59,32 +59,32 @@ The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000
 
 The original CLI entrypoint remains available:
 
-\`\`\`bash
-Rscript scripts/run_deseq2.R \\
-  --counts data/inputs/demo/counts.csv \\
-  --metadata data/inputs/demo/metadata.csv \\
-  --condition condition \\
-  --reference control \\
-  --contrast treatment \\
+```bash
+Rscript scripts/run_deseq2.R \
+  --counts data/inputs/demo/counts.csv \
+  --metadata data/inputs/demo/metadata.csv \
+  --condition condition \
+  --reference control \
+  --contrast treatment \
   --outdir /tmp/bioai-output
-\`\`\`
+```
 
-The canonical R implementation now lives in \`workflows/deseq2/run.R\`.
+The canonical R implementation now lives in `workflows/deseq2/run.R`.
 
 ## API surface
 
-- \`GET /healthz\` — process health.
-- \`GET /api/v1/workflows\` — registered workflow metadata.
-- \`POST /api/v1/runs\` — validate and queue a registered workflow request.
-- \`GET /api/v1/runs/{run_id}\` — state and exit information.
-- \`GET /api/v1/runs/{run_id}/logs\` — bounded execution log.
-- \`GET /api/v1/runs/{run_id}/artifacts\` — relative artifact names, byte sizes, and SHA-256 checksums.
+- `GET /healthz` — process health.
+- `GET /api/v1/workflows` — registered workflow metadata.
+- `POST /api/v1/runs` — validate and queue a registered workflow request.
+- `GET /api/v1/runs/{run_id}` — state and exit information.
+- `GET /api/v1/runs/{run_id}/logs` — bounded execution log.
+- `GET /api/v1/runs/{run_id}/artifacts` — relative artifact names, byte sizes, and SHA-256 checksums.
 
 See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
 
 ## Repository map
 
-\`\`\`text
+```text
 app/                         FastAPI API and static local UI
 agent/                       Provider-neutral, deterministic planning contract
 workflows/deseq2/             Canonical DESeq2 workflow and manifest
@@ -96,28 +96,28 @@ tests/integration/           API contract tests
 tests/workflow/              Workflow registration and contract tests
 examples/deseq2/              Synthetic fixture generator
 docs/                         Architecture, decisions, API, reproducibility
-\`\`\`
+```
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| \`BIOAI_INPUT_ROOT\` | \`data/inputs/\` | Allowed root for input CSV files |
-| \`BIOAI_RUNS_DIR\` | \`runs/\` | Local run records, logs, and outputs |
-| \`BIOAI_MAX_RUN_SECONDS\` | \`1800\` | Per-run wall-clock limit |
-| \`BIOAI_MAX_LOG_BYTES\` | \`2097152\` | Maximum bytes retained per run log |
-| \`BIOAI_MAX_CONCURRENT_RUNS\` | \`2\` | Maximum concurrent workflow processes |
+| `BIOAI_INPUT_ROOT` | `data/inputs/` | Allowed root for input CSV files |
+| `BIOAI_RUNS_DIR` | `runs/` | Local run records, logs, and outputs |
+| `BIOAI_MAX_RUN_SECONDS` | `1800` | Per-run wall-clock limit |
+| `BIOAI_MAX_LOG_BYTES` | `2097152` | Maximum bytes retained per run log |
+| `BIOAI_MAX_CONCURRENT_RUNS` | `2` | Maximum concurrent workflow processes |
 
 Relative configuration paths are resolved from the repository root. The runtime rejects absolute input paths, path traversal, and symlinks that resolve outside the input root. Generated run files are ignored by Git.
 
 ## Tests and local safety checks
 
-\`\`\`bash
+```bash
 uv run pytest
 python3 -m unittest discover -s tests -v
 python3 scripts/audit_public_release.py
 bash scripts/smoke_test_deseq2.sh
-\`\`\`
+```
 
 The final command requires R and DESeq2. The DESeq2 integration smoke test has not yet been confirmed in a clean R/Bioconductor environment. Passing Python tests does not prove that R analysis ran successfully or that results are scientifically valid.
 
