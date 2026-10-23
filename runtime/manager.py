@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import selectors
 import shutil
@@ -66,14 +67,31 @@ class RunManager:
 
             counts_path = self._resolve_input(request.counts_file)
             metadata_path = self._resolve_input(request.metadata_file)
+            # Freeze the bytes consumed by R, not merely a mutable input filename.
+            snapshots: dict[str, Path] = {}
+            provenance: dict[str, dict[str, Any]] = {}
+            for role, path in (("counts", counts_path), ("metadata", metadata_path)):
+                snapshot = tmp_dir / f"{role}.csv"
+                digest = hashlib.sha256()
+                with path.open("rb") as source, snapshot.open("xb") as target:
+                    while chunk := source.read(1024 * 1024):
+                        target.write(chunk)
+                        digest.update(chunk)
+                snapshots[role] = snapshot
+                provenance[role] = {
+                    "filename": request.counts_file if role == "counts" else request.metadata_file,
+                    "sha256": digest.hexdigest(),
+                    "size_bytes": snapshot.stat().st_size,
+                }
+            self.store.update(run_id, input_provenance=provenance)
             rscript = self._find_rscript()
             command = [
                 rscript,
                 str(workflow.entrypoint),
                 "--counts",
-                str(counts_path),
+                str(snapshots["counts"]),
                 "--metadata",
-                str(metadata_path),
+                str(snapshots["metadata"]),
                 "--condition",
                 request.condition,
                 "--reference",
