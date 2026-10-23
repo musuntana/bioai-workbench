@@ -251,6 +251,13 @@
             " → " + JSON.stringify(change.run_b));
         }
         if (!payload.changed_parameters.length) lines.push("  None recorded.");
+        lines.push("Input content comparison:");
+        for (const role of ["counts", "metadata"]) {
+          const item = payload.inputs[role];
+          lines.push("  " + role + ": " + (
+            item.same_content === null ? "unknown (missing historical hash)" :
+            item.same_content ? "same content" : "different content"));
+        }
         lines.push("Artifact checksum comparison:");
         for (const artifact of payload.artifacts) {
           lines.push("  " + artifact.path + ": " + (
