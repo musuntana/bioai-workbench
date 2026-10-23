@@ -9,7 +9,6 @@ from agent.contracts import WorkflowPlan
 from app.registry import get_workflow
 from app.schemas import RunRequest
 
-
 _TASK_TO_WORKFLOW = {
     "differential_expression": "deseq2-basic",
     "deseq2": "deseq2-basic",

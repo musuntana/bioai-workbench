@@ -13,12 +13,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from artifacts.manifest import write_artifact_manifest
 from app.registry import get_workflow
 from app.schemas import RunRequest
+from artifacts.manifest import write_artifact_manifest
 from runtime.config import RuntimeConfig
 from runtime.state import RunStore, utc_now
-
 
 EXPECTED_DESEQ2_OUTPUTS = (
     "differential_expression_all.csv",

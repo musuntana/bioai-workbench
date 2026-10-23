@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 MANIFEST_NAME = "artifact_manifest.json"
 
 

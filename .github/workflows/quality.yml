@@ -62,14 +62,11 @@ jobs:
       - name: Check smoke-test shell syntax
         run: bash -n scripts/smoke_test_deseq2.sh
 
-      - name: Preview Ruff fixes and continue diagnostics
-        run: uv run ruff check --diff app agent runtime artifacts tests || true
+      - name: Lint Python packages and tests
+        run: uv run ruff check app agent runtime artifacts tests
 
       - name: Run unit, integration, and workflow contract tests
         run: uv run pytest
-
-      - name: Run scanner unit tests
-        run: python -m unittest discover -s tests -v
 
       - name: Scan source and configuration for disclosure patterns
         run: python scripts/audit_public_release.py

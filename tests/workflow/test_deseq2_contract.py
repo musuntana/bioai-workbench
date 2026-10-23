@@ -5,7 +5,6 @@ from pathlib import Path
 
 from app.registry import get_workflow
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 

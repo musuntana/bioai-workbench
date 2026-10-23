@@ -6,7 +6,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -41,7 +40,7 @@ class RuntimeConfig:
     max_concurrent_runs: int = 2
 
     @classmethod
-    def from_env(cls) -> "RuntimeConfig":
+    def from_env(cls) -> RuntimeConfig:
         return cls(
             project_root=PROJECT_ROOT,
             input_root=_configured_path("BIOAI_INPUT_ROOT", PROJECT_ROOT / "data" / "inputs"),

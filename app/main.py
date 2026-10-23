@@ -21,7 +21,6 @@ from runtime.config import RuntimeConfig
 from runtime.manager import RunManager
 from runtime.state import RunStore
 
-
 config = RuntimeConfig.from_env()
 config.prepare()
 store = RunStore(config.runs_root)

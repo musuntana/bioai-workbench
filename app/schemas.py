@@ -51,7 +51,7 @@ class RunRequest(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def distinct_levels(self) -> "RunRequest":
+    def distinct_levels(self) -> RunRequest:
         if self.reference == self.contrast:
             raise ValueError("reference and contrast must be different.")
         return self

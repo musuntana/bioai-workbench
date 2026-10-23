@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-
 _RUN_ID = re.compile(r"^[a-f0-9]{32}$")
 _ALLOWED_STATUSES = {"queued", "running", "succeeded", "failed", "timed_out"}
 
