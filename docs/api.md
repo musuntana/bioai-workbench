@@ -61,3 +61,25 @@ curl -fOJ "http://127.0.0.1:8000/api/v1/runs/<run_id>/artifacts/differential_exp
 ```
 
 The server recomputes SHA-256 immediately before sending the file and refuses the download with HTTP 409 if the file no longer matches the manifest. The response includes the verified digest in the `X-Artifact-SHA256` header. This endpoint is local-only and does not add authentication or make the service suitable for untrusted networks.
+
+
+## Validation errors
+
+Request validation failures return HTTP 422 with a stable, value-free error envelope. `error.code` is `VALIDATION_ERROR`; `error.message` is a general summary; and `error.details` is a list of `field`/`message` entries. Field paths omit transport prefixes such as `body` and `query`. The response does not echo submitted values, which may contain local paths or sensitive identifiers.
+
+Example:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed.",
+    "details": [
+      {
+        "field": "counts_file",
+        "message": "Value error, Input files must be safe relative paths under BIOAI_INPUT_ROOT."
+      }
+    ]
+  }
+}
+```

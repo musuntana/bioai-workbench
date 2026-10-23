@@ -41,6 +41,11 @@ class WorkbenchApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(absolute.status_code, 422)
+        absolute_error = absolute.json()["error"]
+        self.assertEqual(absolute_error["code"], "VALIDATION_ERROR")
+        self.assertEqual(absolute_error["message"], "Request validation failed.")
+        self.assertIn("counts_file", {item["field"] for item in absolute_error["details"]})
+        self.assertNotIn("/private/counts.csv", absolute.text)
 
         unknown = self.client.post(
             "/api/v1/runs",
@@ -52,6 +57,11 @@ class WorkbenchApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(unknown.status_code, 422)
+        unknown_error = unknown.json()["error"]
+        self.assertEqual(unknown_error["code"], "VALIDATION_ERROR")
+        self.assertIn(
+            "shell_command", {item["field"] for item in unknown_error["details"]}
+        )
 
     def test_run_history_supports_pagination_and_status_filter(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -88,6 +98,13 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(succeeded.status_code, 200)
             self.assertEqual(succeeded.json()["runs"][0]["status"], "succeeded")
             self.assertEqual(invalid_status.status_code, 422)
+            self.assertEqual(
+                invalid_status.json()["error"]["code"], "VALIDATION_ERROR"
+            )
+            self.assertIn(
+                "status",
+                {item["field"] for item in invalid_status.json()["error"]["details"]},
+            )
 
     def test_home_page_exposes_run_history_controls(self) -> None:
         response = self.client.get("/")
