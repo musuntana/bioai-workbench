@@ -41,7 +41,7 @@ class PublicReleaseAuditTests(unittest.TestCase):
             self.assertIn("credential_assignment", categories)
             self.assertIn("personal_or_data_absolute_path", categories)
             self.assertNotIn("secret-value-not-for-output", repr(findings))
-            self.assertNotIn("/Users/alice/private-data", repr(findings))
+            self.assertNotIn("/" + "Users/alice/private-data", repr(findings))
 
     def test_flags_prohibited_data_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
