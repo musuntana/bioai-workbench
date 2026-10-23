@@ -223,27 +223,34 @@ def _public_error_message(exc: Exception) -> str:
 
 
 def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    """Terminate the process group, including children that outlive the leader."""
     try:
         if os.name == "posix":
             os.killpg(process.pid, signal.SIGTERM)
-        else:
+        elif process.poll() is None:
             process.terminate()
     except ProcessLookupError:
         return
+
     try:
         process.wait(timeout=2)
     except subprocess.TimeoutExpired:
-        try:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
-            else:
-                process.kill()
-        except ProcessLookupError:
-            pass
-        try:
-            process.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
+        pass
+
+    # The parent may have exited while a child still holds the output pipe open.
+    # On POSIX, signal the group even when process.poll() is no longer None.
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        elif process.poll() is None:
+            process.kill()
+    except ProcessLookupError:
+        pass
+
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
 
 
 def _run_bounded_process(
@@ -278,7 +285,7 @@ def _run_bounded_process(
     with log_path.open("wb") as log_stream:
         while selector.get_map():
             remaining = deadline - time.monotonic()
-            if remaining <= 0 and process.poll() is None and not timed_out:
+            if remaining <= 0 and not timed_out:
                 timed_out = True
                 _stop_process(process)
             events = selector.select(timeout=0.1)
