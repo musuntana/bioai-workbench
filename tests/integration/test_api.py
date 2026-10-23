@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from app.main import app
+from app.main import _sample_ma_points, app
 from artifacts.manifest import write_artifact_manifest
 from runtime.config import PROJECT_ROOT, RuntimeConfig
 from runtime.manager import RunManager
@@ -278,6 +278,22 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(list((root / "inputs").glob(".bioai-upload-*")), [])
 
 
+    def test_ma_plot_sampling_is_bounded_and_preserves_expression_range(self) -> None:
+        points = [
+            {
+                "gene_id": f"gene_{index}",
+                "baseMean": float(index),
+                "log2FoldChange": float(index % 7) - 3,
+                "significant": index % 11 == 0,
+            }
+            for index in range(101)
+        ]
+        sampled = _sample_ma_points(points, limit=10)
+        self.assertEqual(len(sampled), 10)
+        self.assertEqual(sampled[0]["baseMean"], 0.0)
+        self.assertEqual(sampled[-1]["baseMean"], 100.0)
+        self.assertEqual(sampled, _sample_ma_points(points, limit=10))
+
     def test_results_endpoint_filters_paginates_and_returns_volcano_points(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -311,6 +327,10 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["missing_padj_genes"], 1)
             self.assertEqual(payload["summary"]["plot_eligible_genes"], 5)
             self.assertEqual(len(payload["plot_points"]), 5)
+            self.assertEqual(payload["summary"]["ma_eligible_genes"], 6)
+            self.assertEqual(payload["summary"]["ma_points_returned"], 6)
+            self.assertFalse(payload["summary"]["ma_points_truncated"])
+            self.assertEqual({point["gene_id"] for point in payload["ma_points"]}, {f"gene_{letter}" for letter in "abcdef"})
             self.assertFalse(payload["summary"]["plot_points_truncated"])
             self.assertEqual(
                 {point["gene_id"] for point in payload["plot_points"] if point["significant"]},
@@ -419,6 +439,8 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('/api/v1/inputs/validate', response.text)
         self.assertIn('id="results-panel"', response.text)
         self.assertIn('id="volcano-plot"', response.text)
+        self.assertIn('id="ma-plot"', response.text)
+        self.assertIn("drawMAPlot(payload.ma_points, summary)", response.text)
         self.assertIn('/results?', response.text)
 
 

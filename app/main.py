@@ -584,6 +584,20 @@ def _sample_plot_points(
     return significant + sample(other, limit - len(significant))
 
 
+
+def _sample_ma_points(
+    points: list[dict[str, Any]],
+    limit: int = MAX_VOLCANO_POINTS,
+) -> list[dict[str, Any]]:
+    """Sample across mean expression rather than significance to preserve MA-plot coverage."""
+    points = sorted(points, key=lambda point: (point["baseMean"], point["gene_id"].casefold()))
+    if len(points) <= limit:
+        return points
+    if limit == 1:
+        return [points[len(points) // 2]]
+    return [points[(index * (len(points) - 1)) // (limit - 1)] for index in range(limit)]
+
+
 @app.get("/api/v1/runs/{run_id}/results")
 def get_run_results(
     run_id: str,
@@ -697,6 +711,24 @@ def get_run_results(
     other_points = [point for point in plot_candidates if not point["significant"]]
     plot_points = _sample_plot_points(significant_points, other_points)
 
+    ma_candidates: list[dict[str, Any]] = []
+    for row in all_rows:
+        base_mean = row.get("baseMean")
+        log2_fold_change = row.get("log2FoldChange")
+        if (
+            not isinstance(base_mean, (int, float))
+            or base_mean < 0
+            or not isinstance(log2_fold_change, (int, float))
+        ):
+            continue
+        ma_candidates.append({
+            "gene_id": row["gene_id"],
+            "baseMean": base_mean,
+            "log2FoldChange": log2_fold_change,
+            "significant": _is_significant(row, padj_max, min_abs_log2fc),
+        })
+    ma_points = _sample_ma_points(ma_candidates)
+
     search_term = q.casefold().strip()
     filtered_rows = [
         row for row in all_rows
@@ -734,10 +766,14 @@ def get_run_results(
             "plot_eligible_genes": len(plot_candidates),
             "plot_points_returned": len(plot_points),
             "plot_points_truncated": len(plot_candidates) > len(plot_points),
+            "ma_eligible_genes": len(ma_candidates),
+            "ma_points_returned": len(ma_points),
+            "ma_points_truncated": len(ma_candidates) > len(ma_points),
             "padj_max": padj_max,
             "min_abs_log2fc": min_abs_log2fc,
         },
         "plot_points": plot_points,
+        "ma_points": ma_points,
     }
 
 
