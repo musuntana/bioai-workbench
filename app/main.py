@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import hmac
+import io
 import math
 import os
 import re
@@ -14,7 +15,7 @@ from typing import Any, Literal
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.registry import list_workflows
 from app.schemas import (
@@ -598,19 +599,10 @@ def _sample_ma_points(
     return [points[(index * (len(points) - 1)) // (limit - 1)] for index in range(limit)]
 
 
-@app.get("/api/v1/runs/{run_id}/results")
-def get_run_results(
-    run_id: str,
-    limit: int = Query(default=25, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
-    q: str = Query(default="", max_length=200),
-    significant_only: bool = False,
-    padj_max: float = Query(default=0.05, gt=0, le=1),
-    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
-    sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
-    sort_order: Literal["asc", "desc"] = "asc",
-) -> dict[str, Any]:
-    """Return a paginated, filterable view of the verified DESeq2 result artifact."""
+def _load_verified_result_rows(
+    run_id: str, padj_max: float, min_abs_log2fc: float, *, preserve_raw: bool = False
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """Read only the manifest-verified output; optionally preserve exact source CSV values."""
     try:
         record = run_manager.store.get(run_id)
         artifacts = run_manager.get_artifacts(run_id)
@@ -671,6 +663,8 @@ def get_run_results(
                 if not gene_id.strip():
                     raise HTTPException(status_code=409, detail="Result artifact contains an empty gene ID.")
                 row: dict[str, Any] = {"gene_id": gene_id}
+                if preserve_raw:
+                    row["_raw_csv"] = [raw_row.get(column, "") for column in columns]
                 numeric_columns = {"baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"}
                 for column in columns:
                     if column == "gene_id":
@@ -689,6 +683,58 @@ def get_run_results(
 
     if not all_rows:
         raise HTTPException(status_code=409, detail="Result artifact contains no gene rows.")
+
+    return columns, all_rows
+
+
+def _filter_sort_result_rows(
+    rows: list[dict[str, Any]],
+    *,
+    q: str,
+    significant_only: bool,
+    sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"],
+    sort_order: Literal["asc", "desc"],
+) -> list[dict[str, Any]]:
+    """Apply identical filtering and ordering to previews and CSV exports."""
+    search_term = q.casefold().strip()
+    filtered_rows = [
+        row for row in rows
+        if (not search_term or search_term in row["gene_id"].casefold())
+        and (not significant_only or row["significant"])
+    ]
+    if sort_by == "gene_id":
+        filtered_rows.sort(
+            key=lambda row: row["gene_id"].casefold(),
+            reverse=sort_order == "desc",
+        )
+    else:
+        def sort_key(row: dict[str, Any]) -> tuple[int, float, str]:
+            value = row.get(sort_by)
+            if not isinstance(value, (int, float)):
+                return (1, 0.0, row["gene_id"].casefold())
+            return (
+                0,
+                value if sort_order == "asc" else -value,
+                row["gene_id"].casefold(),
+            )
+        filtered_rows.sort(key=sort_key)
+    return filtered_rows
+
+
+@app.get("/api/v1/runs/{run_id}/results")
+def get_run_results(
+    run_id: str,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    q: str = Query(default="", max_length=200),
+    significant_only: bool = False,
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+    sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
+    sort_order: Literal["asc", "desc"] = "asc",
+) -> dict[str, Any]:
+    """Return a paginated, filterable view of the verified DESeq2 result artifact."""
+    columns, all_rows = _load_verified_result_rows(run_id, padj_max, min_abs_log2fc)
 
     significant_rows = [
         row for row in all_rows if _is_significant(row, padj_max, min_abs_log2fc)
@@ -729,28 +775,10 @@ def get_run_results(
         })
     ma_points = _sample_ma_points(ma_candidates)
 
-    search_term = q.casefold().strip()
-    filtered_rows = [
-        row for row in all_rows
-        if (not search_term or search_term in row["gene_id"].casefold())
-        and (not significant_only or row["significant"])
-    ]
-    if sort_by == "gene_id":
-        filtered_rows.sort(
-            key=lambda row: row["gene_id"].casefold(),
-            reverse=sort_order == "desc",
-        )
-    else:
-        def sort_key(row: dict[str, Any]) -> tuple[int, float, str]:
-            value = row.get(sort_by)
-            if not isinstance(value, (int, float)):
-                return (1, 0.0, row["gene_id"].casefold())
-            return (
-                0,
-                value if sort_order == "asc" else -value,
-                row["gene_id"].casefold(),
-            )
-        filtered_rows.sort(key=sort_key)
+    filtered_rows = _filter_sort_result_rows(
+        all_rows, q=q, significant_only=significant_only, sort_by=sort_by,
+        sort_order=sort_order,
+    )
 
     return {
         "run_id": run_id,
@@ -775,6 +803,52 @@ def get_run_results(
         "plot_points": plot_points,
         "ma_points": ma_points,
     }
+
+
+@app.get("/api/v1/runs/{run_id}/results/export")
+def export_run_results(
+    run_id: str,
+    q: str = Query(default="", max_length=200),
+    significant_only: bool = False,
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+    sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
+    sort_order: Literal["asc", "desc"] = "asc",
+) -> StreamingResponse:
+    """Export all matching genes, preserving the exact values of the verified source artifact."""
+    columns, rows = _load_verified_result_rows(
+        run_id, padj_max, min_abs_log2fc, preserve_raw=True
+    )
+    filtered = _filter_sort_result_rows(
+        rows, q=q, significant_only=significant_only, sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    def iter_csv() -> Any:
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer, lineterminator="\\n")
+        writer.writerow(columns)
+        yield buffer.getvalue()
+        buffer.seek(0)
+        buffer.truncate(0)
+        for index, row in enumerate(filtered, start=1):
+            writer.writerow(row["_raw_csv"])
+            if index % 250 == 0:
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+        if buffer.tell():
+            yield buffer.getvalue()
+
+    return StreamingResponse(
+        iter_csv(),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="deseq2_filtered_{run_id}.csv"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.get("/api/v1/runs/{run_id}/artifacts/{artifact_path:path}", include_in_schema=True)
