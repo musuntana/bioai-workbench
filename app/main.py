@@ -510,6 +510,69 @@ def list_runs(
     return store.list_runs(limit=limit, offset=offset, status=status)
 
 
+def _compare_gene_sets(
+    run_a: str, run_b: str, padj_max: float, min_abs_log2fc: float
+) -> dict[str, Any]:
+    from app.deg_compare import compare_gene_sets
+
+    return compare_gene_sets(
+        run_a, run_b, _load_verified_result_rows,
+        padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
+    )
+
+
+@app.get("/api/v1/runs/compare/genes")
+def compare_run_genes(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+) -> dict[str, Any]:
+    result = _compare_gene_sets(run_a, run_b, padj_max, min_abs_log2fc)
+    result["genes"] = result["genes"][:100]
+    result["preview_truncated"] = sum(
+        result["counts"][key] for key in
+        ("both_significant", "only_a_significant", "only_b_significant")
+    ) > 100
+    return result
+
+
+@app.get("/api/v1/runs/compare/genes/export")
+def export_compared_genes(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+) -> StreamingResponse:
+    result = _compare_gene_sets(run_a, run_b, padj_max, min_abs_log2fc)
+    columns = (
+        "gene_id", "category", "run_a_padj", "run_b_padj",
+        "run_a_log2fc", "run_b_log2fc",
+    )
+
+    def csv_lines() -> Iterator[str]:
+        stream = io.StringIO()
+        writer = csv.writer(stream)
+        writer.writerow(columns)
+        yield stream.getvalue()
+        for gene in result["genes"]:
+            stream.seek(0)
+            stream.truncate(0)
+            # Protect spreadsheet applications from formula-like gene identifiers.
+            values = [
+                "'" + gene[key] if isinstance(gene[key], str)
+                and gene[key].startswith(("=", "+", "-", "@")) else gene[key]
+                for key in columns
+            ]
+            writer.writerow(values)
+            yield stream.getvalue()
+
+    return StreamingResponse(
+        csv_lines(), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="deg_set_comparison.csv"'},
+    )
+
+
 @app.get("/api/v1/runs/compare")
 def compare_run_snapshots(
     run_a: str = Query(..., min_length=32, max_length=32),
