@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BioAI Workbench</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0 auto; max-width: 920px; padding: 2rem 1.25rem 4rem; line-height: 1.5; }
+    h1 { margin-bottom: .25rem; }
+    .muted { opacity: .75; }
+    .panel { border: 1px solid #8886; border-radius: 12px; padding: 1rem; margin: 1.25rem 0; }
+    form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+    label { display: grid; gap: .35rem; font-size: .92rem; }
+    input { box-sizing: border-box; width: 100%; padding: .65rem; border: 1px solid #8888; border-radius: 7px; background: transparent; color: inherit; }
+    .wide { grid-column: 1 / -1; }
+    button { cursor: pointer; padding: .7rem 1rem; border: 0; border-radius: 8px; font-weight: 650; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: .8rem; border-radius: 8px; background: #8881; }
+    ul { padding-left: 1.25rem; }
+    @media (max-width: 620px) { form { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <h1>BioAI Workbench</h1>
+  <p class="muted">Local-first execution for registered, reproducible bioinformatics workflows.</p>
+
+  <section class="panel">
+    <h2>Available workflows</h2>
+    <div id="workflow-list" class="muted">Loading workflow registry…</div>
+  </section>
+
+  <section class="panel">
+    <h2>Run differential expression</h2>
+    <p class="muted">Place CSV inputs under <code>BIOAI_INPUT_ROOT</code> (default <code>data/inputs/</code>) and enter relative file names. Use synthetic data first.</p>
+    <form id="run-form">
+      <label>Counts CSV
+        <input name="counts_file" value="counts.csv" required>
+      </label>
+      <label>Metadata CSV
+        <input name="metadata_file" value="metadata.csv" required>
+      </label>
+      <label>Condition column
+        <input name="condition" value="condition" required>
+      </label>
+      <label>Reference level
+        <input name="reference" value="control" required>
+      </label>
+      <label>Contrast level
+        <input name="contrast" value="treatment" required>
+      </label>
+      <label>Adjusted p-value threshold (alpha)
+        <input name="alpha" type="number" min="0.000001" max="0.999999" step="any" value="0.05" required>
+      </label>
+      <div class="wide"><button type="submit">Start workflow</button></div>
+    </form>
+  </section>
+
+  <section id="run-panel" class="panel" hidden>
+    <h2>Run status</h2>
+    <p id="run-summary" role="status">Submitting…</p>
+    <h3>Artifacts</h3>
+    <ul id="artifact-list"></ul>
+    <h3>Logs</h3>
+    <pre id="run-log">No logs yet.</pre>
+  </section>
+
+  <script>
+    const workflowList = document.getElementById("workflow-list");
+    const runPanel = document.getElementById("run-panel");
+    const runSummary = document.getElementById("run-summary");
+    const runLog = document.getElementById("run-log");
+    const artifactList = document.getElementById("artifact-list");
+
+    async function loadWorkflows() {
+      try {
+        const response = await fetch("/api/v1/workflows");
+        if (!response.ok) throw new Error("Could not load workflows.");
+        const payload = await response.json();
+        workflowList.textContent = "";
+        const list = document.createElement("ul");
+        for (const workflow of payload.workflows) {
+          const item = document.createElement("li");
+          item.textContent = workflow.name + " · " + workflow.id + " · v" + workflow.version;
+          list.appendChild(item);
+        }
+        workflowList.appendChild(list);
+      } catch (error) {
+        workflowList.textContent = error.message;
+      }
+    }
+
+    async function refreshRun(runId) {
+      const [statusResponse, logsResponse, artifactsResponse] = await Promise.all([
+        fetch("/api/v1/runs/" + runId),
+        fetch("/api/v1/runs/" + runId + "/logs"),
+        fetch("/api/v1/runs/" + runId + "/artifacts")
+      ]);
+      if (statusResponse.ok) {
+        const status = await statusResponse.json();
+        runSummary.textContent = "Run " + status.run_id + " · " + status.status +
+          (status.error_message ? " · " + status.error_message : "");
+        if (status.status === "succeeded" || status.status === "failed" || status.status === "timed_out") {
+          if (artifactsResponse.ok) {
+            const payload = await artifactsResponse.json();
+            artifactList.textContent = "";
+            for (const artifact of payload.artifacts) {
+              const item = document.createElement("li");
+              item.textContent = artifact.path + " · " + artifact.size_bytes + " bytes · SHA-256 " + artifact.sha256;
+              artifactList.appendChild(item);
+            }
+          }
+          return;
+        }
+      }
+      if (logsResponse.ok) {
+        const payload = await logsResponse.json();
+        runLog.textContent = payload.text || "Waiting for workflow output…";
+      }
+      window.setTimeout(function () { refreshRun(runId).catch(showError); }, 1500);
+    }
+
+    function showError(error) {
+      runSummary.textContent = "Error: " + error.message;
+    }
+
+    document.getElementById("run-form").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      runPanel.hidden = false;
+      runSummary.textContent = "Submitting workflow…";
+      runLog.textContent = "Waiting for workflow output…";
+      artifactList.textContent = "";
+      const form = new FormData(event.currentTarget);
+      const body = Object.fromEntries(form.entries());
+      body.alpha = Number(body.alpha);
+      try {
+        const response = await fetch("/api/v1/runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not start workflow.");
+        runSummary.textContent = "Run " + payload.run_id + " · " + payload.status;
+        await refreshRun(payload.run_id);
+      } catch (error) {
+        showError(error);
+      }
+    });
+
+    loadWorkflows();
+  </script>
+</body>
+</html>
