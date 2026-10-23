@@ -15,6 +15,7 @@ from pathlib import Path
 TEXT_SUFFIXES = {
     ".r", ".py", ".sh", ".yaml", ".yml", ".toml", ".json",
     ".env", ".ini", ".cfg", ".sql", ".md", ".rst", ".txt", ".rmd", ".csv", ".tsv",
+    ".html", ".js", ".css",
 }
 EXCLUDED_DIRS = {
     ".git", ".venv", "venv", "renv", "__pycache__", ".pytest_cache",
