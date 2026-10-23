@@ -125,7 +125,7 @@ def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
     relative_path = PurePosixPath(artifact_path)
     if (
         not artifact_path
-        or "\\\\" in artifact_path
+        or "\\" in artifact_path
         or relative_path.is_absolute()
         or any(part in {"", ".", ".."} for part in artifact_path.split("/"))
     ):
