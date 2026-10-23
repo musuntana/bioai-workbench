@@ -32,7 +32,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/runs \
   }'
 ```
 
-The response includes a `run_id` and `status_url`. Poll `GET /api/v1/runs/{run_id}`; inspect `/logs` and `/artifacts` after completion.
+The response includes a `run_id` and `status_url`. Poll `GET /api/v1/runs/{run_id}`; the status response includes the validated parameter snapshot (relative input filenames and analysis parameters) used for this run. Inspect `/logs` and `/artifacts` after completion.
 
 
 ## List run history

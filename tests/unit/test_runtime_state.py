@@ -12,8 +12,18 @@ class RunStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = RunStore(Path(temp_dir))
             run_id = "c" * 32
-            created = store.create(run_id, "deseq2-basic")
+            created = store.create(
+                run_id,
+                "deseq2-basic",
+                parameters={
+                    "counts_file": "demo/counts.csv",
+                    "metadata_file": "demo/metadata.csv",
+                    "alpha": 0.05,
+                },
+            )
             self.assertEqual(created["status"], "queued")
+            self.assertEqual(created["parameters"]["alpha"], 0.05)
+            self.assertEqual(store.get(run_id)["parameters"]["counts_file"], "demo/counts.csv")
             self.assertIsNone(created["started_at"])
 
             updated = store.update(

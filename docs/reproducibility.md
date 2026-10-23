@@ -2,7 +2,7 @@
 
 ## Per-run record
 
-Each run receives an opaque random ID and a file-backed state record at `runs/<run_id>/run.json`. The record contains workflow ID, status transitions, timestamps, exit code, a bounded error summary, artifact count, and whether log output was truncated. It does not store the submitted absolute input paths.
+Each run receives an opaque random ID and a file-backed state record at `runs/<run_id>/run.json`. The record contains workflow ID, the validated parameter snapshot, status transitions, timestamps, exit code, a bounded error summary, artifact count, and whether log output was truncated. The snapshot records relative input filenames and analysis parameters, never submitted absolute input paths. Existing records created before this field was added are returned with an empty parameter object.
 
 ## Input and output provenance
 

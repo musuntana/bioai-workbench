@@ -56,7 +56,8 @@
 
 - [x] Add a paginated run-history API with status filtering; the existing detail endpoint exposes current run status.
 - [x] Expose logs and checksummed artifact metadata through dedicated endpoints.
-- [ ] Persist and expose submitted parameter snapshots and structured validation results.
+- [x] Persist and expose validated parameter snapshots with each run record.
+- [ ] Expose structured validation results and validation errors in a stable response contract.
 - [x] Add a run-history UI with status filtering and links into run details after the history API stabilized.
 - [ ] Add optional local model support only if it improves a measured use case.
 

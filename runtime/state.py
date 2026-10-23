@@ -30,11 +30,18 @@ class RunStore:
             raise ValueError("Invalid run ID.")
         return self.root / run_id
 
-    def create(self, run_id: str, workflow_id: str) -> dict[str, Any]:
+    def create(
+        self,
+        run_id: str,
+        workflow_id: str,
+        *,
+        parameters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         now = utc_now()
         record: dict[str, Any] = {
             "run_id": run_id,
             "workflow_id": workflow_id,
+            "parameters": dict(parameters or {}),
             "status": "queued",
             "created_at": now,
             "updated_at": now,

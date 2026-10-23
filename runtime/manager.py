@@ -41,7 +41,11 @@ class RunManager:
     def create_run(self, request: RunRequest) -> dict[str, Any]:
         if get_workflow(request.workflow_id) is None:
             raise ValueError("Workflow is not registered.")
-        return self.store.create(uuid4().hex, request.workflow_id)
+        return self.store.create(
+            uuid4().hex,
+            request.workflow_id,
+            parameters=request.model_dump(exclude={"workflow_id"}),
+        )
 
     def execute(self, run_id: str, request_data: dict[str, Any]) -> None:
         """Execute a previously queued request. Safe to pass as a background task."""

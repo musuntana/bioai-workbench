@@ -88,6 +88,9 @@ class RuntimeLifecycleTests(unittest.TestCase):
 
             status = manager.store.get(run_id)
             self.assertEqual(status["status"], "succeeded")
+            self.assertEqual(status["parameters"]["counts_file"], "counts.csv")
+            self.assertEqual(status["parameters"]["metadata_file"], "metadata.csv")
+            self.assertEqual(status["parameters"]["alpha"], 0.05)
             self.assertEqual(status["artifact_count"], len(OUTPUTS))
             artifacts = manager.get_artifacts(run_id)
             self.assertEqual({item["path"] for item in artifacts}, set(OUTPUTS))

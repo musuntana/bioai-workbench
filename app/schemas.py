@@ -84,6 +84,7 @@ RunState = Literal["queued", "running", "succeeded", "failed", "timed_out"]
 class RunStatus(BaseModel):
     run_id: str
     workflow_id: str
+    parameters: dict[str, object] = Field(default_factory=dict)
     status: RunState
     created_at: str
     updated_at: str
