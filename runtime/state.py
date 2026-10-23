@@ -45,10 +45,16 @@ class RunStore:
             raise ValueError("Invalid parent run ID.")
         if root_run_id is not None and not _RUN_ID.fullmatch(root_run_id):
             raise ValueError("Invalid root run ID.")
-        if attempt is not None and (isinstance(attempt, bool) or attempt < 1):
+        if attempt is not None and (
+            isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1
+        ):
             raise ValueError("Run attempt must be a positive integer.")
-        if max_family_attempts is not None and max_family_attempts < 1:
-            raise ValueError("Maximum family attempts must be positive.")
+        if max_family_attempts is not None and (
+            isinstance(max_family_attempts, bool)
+            or not isinstance(max_family_attempts, int)
+            or max_family_attempts < 1
+        ):
+            raise ValueError("Maximum family attempts must be a positive integer.")
         root_id = root_run_id or run_id
         now = utc_now()
         record: dict[str, Any] = {

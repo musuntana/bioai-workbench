@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import selectors
 import shutil
@@ -78,7 +79,7 @@ class RunManager:
         try:
             record = self.store.get(source_run_id)
         except ValueError as exc:
-            raise ValueError("Run cannot be rerun because its recorded snapshots are unavailable.") from exc
+            raise FileNotFoundError("Run not found.") from exc
         if record is None:
             raise FileNotFoundError("Run not found.")
         if record.get("status") not in _TERMINAL_STATUSES:
@@ -402,8 +403,6 @@ def _sha256_file(path: Path) -> str:
 
 
 def _constant_time_digest_match(actual: str, expected: str) -> bool:
-    import hmac
-
     return hmac.compare_digest(actual, expected)
 
 
