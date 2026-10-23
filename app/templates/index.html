@@ -21,7 +21,27 @@
     .history-controls label { flex: 1 1 14rem; }
     #history-list { display: grid; gap: .5rem; list-style: none; padding: 0; }
     .history-run { width: 100%; text-align: left; border: 1px solid #8886; background: #8881; font-weight: 500; overflow-wrap: anywhere; }
-    @media (max-width: 620px) { form { grid-template-columns: 1fr; } .wide { grid-column: auto; } }
+    .result-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; align-items: end; }
+    .result-controls label { display: grid; gap: .35rem; font-size: .9rem; min-width: 0; }
+    .result-controls .checkbox-control { display: flex; align-items: center; gap: .5rem; min-height: 2.5rem; }
+    .result-controls .checkbox-control input { width: auto; }
+    .result-table-wrap { width: 100%; overflow-x: auto; }
+    #results-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    #results-table th, #results-table td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid #8884; white-space: nowrap; }
+    #results-table th { font-weight: 700; }
+    #results-table tbody tr.significant-row { background: #d9485f14; }
+    #volcano-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #88808; border-radius: 8px; }
+    #volcano-plot text { fill: currentColor; font-size: 12px; }
+    #volcano-plot .grid-line { stroke: currentColor; opacity: .13; }
+    #volcano-plot .axis-line { stroke: currentColor; opacity: .6; }
+    #volcano-plot .volcano-point { stroke: currentColor; stroke-width: .35; opacity: .78; }
+    #volcano-plot .volcano-point.significant { fill: #d9485f; }
+    #volcano-plot .volcano-point.nonsignificant { fill: #7296c8; }
+    .volcano-legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; }
+    .legend-dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .3rem; }
+    .legend-significant { background: #d9485f; }
+    .legend-nonsignificant { background: #7296c8; }
+    @media (max-width: 620px) { form { grid-template-columns: 1fr; } .wide { grid-column: auto; } .result-controls { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -109,6 +129,72 @@
     <pre id="run-log">No logs yet.</pre>
   </section>
 
+  <section id="results-panel" class="panel" hidden>
+    <h2>Differential expression results</h2>
+    <p id="results-summary" class="muted" role="status" aria-live="polite">Results will appear after a successful run.</p>
+
+    <h3>Explore results</h3>
+    <div class="result-controls">
+      <label>Search gene ID
+        <input id="result-search" type="search" maxlength="200" placeholder="e.g. gene_001">
+      </label>
+      <label>Adjusted p-value threshold
+        <input id="result-padj-max" type="number" min="0.000001" max="1" step="any" value="0.05">
+      </label>
+      <label>Minimum absolute log2FC
+        <input id="result-min-abs-log2fc" type="number" min="0" max="1000" step="any" value="1">
+      </label>
+      <label>Sort by
+        <select id="result-sort-by">
+          <option value="padj">Adjusted p-value</option>
+          <option value="log2FoldChange">log2 fold change</option>
+          <option value="baseMean">Mean expression</option>
+          <option value="gene_id">Gene ID</option>
+        </select>
+      </label>
+      <label>Sort order
+        <select id="result-sort-order">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+      </label>
+      <label class="checkbox-control">
+        <input id="result-significant-only" type="checkbox">
+        Significant genes only
+      </label>
+      <div><button id="refresh-results" type="button">Apply filters</button></div>
+    </div>
+
+    <h3>Volcano plot</h3>
+    <p id="volcano-summary" class="muted">Adjusted p-value is shown as −log10(padj); values are capped at 50 for display.</p>
+    <div class="volcano-legend">
+      <span><span class="legend-dot legend-significant"></span>Passes current thresholds</span>
+      <span><span class="legend-dot legend-nonsignificant"></span>Does not pass thresholds</span>
+    </div>
+    <svg id="volcano-plot" viewBox="0 0 900 420" role="img" aria-label="Volcano plot of log2 fold change against adjusted p-value"></svg>
+
+    <h3>Gene table</h3>
+    <div class="result-table-wrap">
+      <table id="results-table">
+        <thead>
+          <tr>
+            <th scope="col">Gene ID</th>
+            <th scope="col">Mean expression</th>
+            <th scope="col">log2FC</th>
+            <th scope="col">p-value</th>
+            <th scope="col">Adjusted p-value</th>
+          </tr>
+        </thead>
+        <tbody id="results-table-body"></tbody>
+      </table>
+    </div>
+    <div class="history-controls">
+      <button id="results-previous" type="button" disabled>Previous</button>
+      <span id="results-page-summary" class="muted">No results loaded.</span>
+      <button id="results-next" type="button" disabled>Next</button>
+    </div>
+  </section>
+
   <script>
     const workflowList = document.getElementById("workflow-list");
     const runPanel = document.getElementById("run-panel");
@@ -120,6 +206,12 @@
     const historyList = document.getElementById("history-list");
     let activeRunId = null;
     let activeRefreshToken = 0;
+    let activeResultsRunId = null;
+    let activeResultsRequestToken = 0;
+    let resultOffset = 0;
+    let resultTotal = 0;
+    const RESULT_PAGE_SIZE = 25;
+    const SVG_NS = "http://www.w3.org/2000/svg";
 
     async function loadWorkflows() {
       try {
@@ -239,6 +331,188 @@
 
     document.getElementById("refresh-inputs").addEventListener("click", loadInputFiles);
 
+
+    const resultsPanel = document.getElementById("results-panel");
+    const resultsSummary = document.getElementById("results-summary");
+    const resultsTableBody = document.getElementById("results-table-body");
+    const resultsPageSummary = document.getElementById("results-page-summary");
+    const resultsPrevious = document.getElementById("results-previous");
+    const resultsNext = document.getElementById("results-next");
+    const volcanoPlot = document.getElementById("volcano-plot");
+    const volcanoSummary = document.getElementById("volcano-summary");
+
+    function formatResultValue(field, value) {
+      if (value === null || value === undefined || value === "") return "—";
+      if (typeof value !== "number" || !Number.isFinite(value)) return String(value);
+      if (field === "padj" || field === "pvalue") {
+        if (value === 0) return "0";
+        return value < 0.001 ? value.toExponential(2) : value.toPrecision(3);
+      }
+      if (field === "baseMean") return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      return value.toFixed(3);
+    }
+
+    function drawVolcanoPlot(points, summary) {
+      volcanoPlot.textContent = "";
+      const width = 900;
+      const height = 420;
+      const margin = { top: 24, right: 24, bottom: 64, left: 76 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const validPoints = points.filter(point =>
+        Number.isFinite(point.log2FoldChange) &&
+        Number.isFinite(point.padj) &&
+        point.padj >= 0
+      );
+      volcanoPlot.setAttribute("aria-label",
+        "Volcano plot showing " + validPoints.length + " genes. Significant genes are highlighted.");
+      function element(name, attributes, text) {
+        const node = document.createElementNS(SVG_NS, name);
+        for (const [key, value] of Object.entries(attributes || {})) node.setAttribute(key, String(value));
+        if (text !== undefined) node.textContent = text;
+        volcanoPlot.appendChild(node);
+        return node;
+      }
+      if (!validPoints.length) {
+        element("text", { x: width / 2, y: height / 2, "text-anchor": "middle" },
+          "No genes have both log2 fold change and adjusted p-value.");
+        volcanoSummary.textContent = "No plottable rows were found in this result artifact.";
+        return;
+      }
+
+      let xMin = Math.min(-1, ...validPoints.map(point => point.log2FoldChange));
+      let xMax = Math.max(1, ...validPoints.map(point => point.log2FoldChange));
+      const xPadding = Math.max(0.2, (xMax - xMin) * 0.05);
+      xMin -= xPadding;
+      xMax += xPadding;
+      const transformed = validPoints.map(point =>
+        Math.min(50, -Math.log10(Math.max(point.padj, 1e-50)))
+      );
+      const maxObservedY = Math.max(1, ...transformed);
+      const yMax = Math.min(50, Math.max(1, Math.ceil(maxObservedY / 5) * 5));
+      const xScale = value => margin.left + ((value - xMin) / (xMax - xMin)) * plotWidth;
+      const yScale = value => margin.top + plotHeight - (value / yMax) * plotHeight;
+
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = (yMax * tick) / 4;
+        const y = yScale(value);
+        element("line", { x1: margin.left, y1: y, x2: width - margin.right, y2: y, class: "grid-line" });
+        element("text", { x: margin.left - 10, y: y + 4, "text-anchor": "end" }, value.toFixed(1));
+      }
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = xMin + ((xMax - xMin) * tick) / 4;
+        const x = xScale(value);
+        element("line", { x1: x, y1: margin.top, x2: x, y2: margin.top + plotHeight, class: "grid-line" });
+        element("text", { x, y: margin.top + plotHeight + 22, "text-anchor": "middle" }, value.toFixed(1));
+      }
+      element("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotHeight, class: "axis-line" });
+      element("line", { x1: margin.left, y1: margin.top + plotHeight, x2: width - margin.right, y2: margin.top + plotHeight, class: "axis-line" });
+      element("text", { x: margin.left + plotWidth / 2, y: height - 16, "text-anchor": "middle" }, "log2 fold change");
+      const yLabel = element("text", {
+        x: 20, y: margin.top + plotHeight / 2, "text-anchor": "middle",
+        transform: "rotate(-90 20 " + (margin.top + plotHeight / 2) + ")"
+      }, "−log10(adjusted p-value)");
+      yLabel.setAttribute("aria-hidden", "true");
+
+      for (const point of validPoints) {
+        const yValue = Math.min(50, -Math.log10(Math.max(point.padj, 1e-50)));
+        const circle = element("circle", {
+          cx: xScale(point.log2FoldChange),
+          cy: yScale(Math.min(yMax, yValue)),
+          r: point.significant ? 3.4 : 2.7,
+          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant")
+        });
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = point.gene_id + " · log2FC " +
+          point.log2FoldChange.toFixed(3) + " · padj " + formatResultValue("padj", point.padj) +
+          " · " + (point.significant ? "significant" : "not significant");
+        circle.appendChild(title);
+      }
+
+      volcanoSummary.textContent = "Plotting " + validPoints.length + " of " +
+        summary.plot_eligible_genes + " plottable genes. Y values are capped at 50; " +
+        "genes with missing adjusted p-values or log2FC are omitted." +
+        (summary.plot_points_truncated ? " Points are deterministically sampled to keep the plot responsive." : "");
+    }
+
+    function renderRunResults(payload) {
+      const summary = payload.summary;
+      resultsSummary.textContent = "Showing " + payload.rows.length + " of " +
+        payload.filtered_genes + " matching genes · " + summary.total_genes +
+        " total genes · " + summary.significant_genes + " significant at padj ≤ " +
+        summary.padj_max + " and |log2FC| ≥ " + summary.min_abs_log2fc +
+        " · " + summary.missing_padj_genes + " missing adjusted p-value(s).";
+      resultsTableBody.textContent = "";
+      const fields = [
+        ["gene_id", "Gene ID"],
+        ["baseMean", "Mean expression"],
+        ["log2FoldChange", "log2FC"],
+        ["pvalue", "p-value"],
+        ["padj", "Adjusted p-value"]
+      ];
+      for (const row of payload.rows) {
+        const tr = document.createElement("tr");
+        if (row.significant) tr.className = "significant-row";
+        for (const [field] of fields) {
+          const td = document.createElement("td");
+          td.textContent = formatResultValue(field, row[field]);
+          tr.appendChild(td);
+        }
+        resultsTableBody.appendChild(tr);
+      }
+      resultOffset = payload.offset;
+      resultTotal = payload.filtered_genes;
+      const first = resultTotal === 0 ? 0 : resultOffset + 1;
+      const last = resultOffset + payload.rows.length;
+      resultsPageSummary.textContent = "Showing " + first + "–" + last + " of " + resultTotal;
+      resultsPrevious.disabled = resultOffset <= 0;
+      resultsNext.disabled = resultOffset + payload.rows.length >= resultTotal;
+      drawVolcanoPlot(payload.plot_points, summary);
+    }
+
+    async function loadRunResults(runId, offset) {
+      activeResultsRunId = runId;
+      const requestToken = ++activeResultsRequestToken;
+      resultsPanel.hidden = false;
+      resultsSummary.textContent = "Loading result table and volcano plot…";
+      const params = new URLSearchParams({
+        limit: String(RESULT_PAGE_SIZE),
+        offset: String(offset),
+        q: document.getElementById("result-search").value,
+        significant_only: String(document.getElementById("result-significant-only").checked),
+        padj_max: document.getElementById("result-padj-max").value || "0.05",
+        min_abs_log2fc: document.getElementById("result-min-abs-log2fc").value || "0",
+        sort_by: document.getElementById("result-sort-by").value,
+        sort_order: document.getElementById("result-sort-order").value
+      });
+      const response = await fetch("/api/v1/runs/" + encodeURIComponent(runId) +
+        "/results?" + params.toString());
+      const payload = await response.json();
+      if (requestToken !== activeResultsRequestToken || runId !== activeResultsRunId) return;
+      if (!response.ok) throw new Error(payload.detail || "Could not load differential-expression results.");
+      renderRunResults(payload);
+    }
+
+    document.getElementById("refresh-results").addEventListener("click", function () {
+      if (activeResultsRunId) loadRunResults(activeResultsRunId, 0).catch(error => {
+        resultsSummary.textContent = "Results unavailable: " + error.message;
+      });
+    });
+    resultsPrevious.addEventListener("click", function () {
+      if (activeResultsRunId && resultOffset > 0) {
+        loadRunResults(activeResultsRunId, Math.max(0, resultOffset - RESULT_PAGE_SIZE)).catch(error => {
+          resultsSummary.textContent = "Results unavailable: " + error.message;
+        });
+      }
+    });
+    resultsNext.addEventListener("click", function () {
+      if (activeResultsRunId && resultOffset + RESULT_PAGE_SIZE < resultTotal) {
+        loadRunResults(activeResultsRunId, resultOffset + RESULT_PAGE_SIZE).catch(error => {
+          resultsSummary.textContent = "Results unavailable: " + error.message;
+        });
+      }
+    });
+
     async function refreshRun(runId, refreshToken) {
       if (runId !== activeRunId || refreshToken !== activeRefreshToken) return;
       const [statusResponse, logsResponse, artifactsResponse] = await Promise.all([
@@ -271,6 +545,18 @@
             artifactList.appendChild(item);
           }
         }
+        if (status.status === "succeeded") {
+          try {
+            await loadRunResults(runId, 0);
+          } catch (error) {
+            resultsPanel.hidden = false;
+            resultsSummary.textContent = "Results unavailable: " + error.message;
+          }
+        } else {
+          resultsPanel.hidden = true;
+          activeResultsRunId = null;
+          activeResultsRequestToken += 1;
+        }
         await loadRunHistory();
         return;
       }
@@ -288,6 +574,11 @@
       runSummary.textContent = "Loading run " + runId + "…";
       runLog.textContent = "Waiting for workflow output…";
       artifactList.textContent = "";
+      resultsPanel.hidden = true;
+      activeResultsRunId = null;
+      activeResultsRequestToken += 1;
+      resultsTableBody.textContent = "";
+      volcanoPlot.textContent = "";
       refreshRun(runId, refreshToken).catch(showError);
     }
 
