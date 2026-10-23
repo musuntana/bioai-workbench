@@ -283,11 +283,17 @@ def _run_bounded_process(
     bytes_written = 0
 
     with log_path.open("wb") as log_stream:
-        while selector.get_map():
+        while process.poll() is None or selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0 and not timed_out:
                 timed_out = True
                 _stop_process(process)
+
+            if not selector.get_map():
+                # A child may close stdout and keep running; timeout still applies.
+                time.sleep(0.05)
+                continue
+
             events = selector.select(timeout=0.1)
             for key, _ in events:
                 chunk = os.read(key.fd, 8192)
@@ -301,8 +307,6 @@ def _run_bounded_process(
                     bytes_written += len(kept)
                 if len(chunk) > max(available, 0):
                     log_truncated = True
-            if process.poll() is not None and not selector.get_map():
-                break
 
     selector.close()
     try:
