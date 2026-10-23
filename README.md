@@ -121,9 +121,10 @@ uv run pytest
 python3 -m unittest discover -s tests -v
 python3 scripts/audit_public_release.py
 bash scripts/smoke_test_deseq2.sh
+bash scripts/smoke_test_api.sh
 ```
 
-The final command requires R and DESeq2. The DESeq2 integration smoke test has not yet been confirmed in a clean R/Bioconductor environment. Passing Python tests does not prove that R analysis ran successfully or that results are scientifically valid.
+The two smoke-test scripts require R and DESeq2; the API smoke test also requires the Python environment installed by `uv sync --locked --extra dev` and `curl`. It starts the API on loopback, uses synthetic data, waits for a successful run, downloads all four expected outputs, and verifies each downloaded SHA-256 against both the artifact manifest and response header. Set `BIOAI_SMOKE_KEEP_ARTIFACTS=1` to retain a local evidence bundle containing the run status/logs, downloaded outputs, and a JSON summary with the R/DESeq2 versions and artifact hashes. These commands are verification tools, not scientific or clinical validation. The clean-environment integration run remains pending until a real run completes successfully.
 
 ## Architecture direction
 

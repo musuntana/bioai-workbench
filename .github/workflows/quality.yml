@@ -64,7 +64,7 @@ jobs:
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
 
       - name: Check smoke-test shell syntax
-        run: bash -n scripts/smoke_test_deseq2.sh
+        run: bash -n scripts/smoke_test_deseq2.sh && bash -n scripts/smoke_test_api.sh
 
       - name: Lint Python packages and tests
         run: uv run ruff check app agent runtime artifacts tests
