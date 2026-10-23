@@ -84,5 +84,22 @@ class PublicReleaseAuditTests(unittest.TestCase):
             )
 
 
+    def test_scans_source_code_under_artifacts_package(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_dir = root / "artifacts"
+            source_dir.mkdir()
+            private_path = "/" + "Users/alice/private-config"
+            (source_dir / "manifest.py").write_text(
+                f'cache_path = "{private_path}"\\n',
+                encoding="utf-8",
+            )
+            findings = AUDIT.scan_root(root)
+            self.assertIn(
+                ("artifacts/manifest.py", 1, "personal_or_data_absolute_path"),
+                findings,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
