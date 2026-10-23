@@ -59,7 +59,7 @@ Optional integration smoke test (requires the same dependencies):
 bash scripts/smoke_test_deseq2.sh
 ```
 
-The example uses generated synthetic counts only. It has not yet been runtime-verified in an R/Bioconductor environment; please treat the smoke-test result as pending until it is run successfully.
+The example uses generated synthetic counts only. The smoke test covers successful artifact creation, manifest path checks, and expected failures for mismatched sample IDs and negative counts. It has not yet been runtime-verified in an R/Bioconductor environment; treat the result as pending until it runs successfully.
 
 ## Architecture direction
 
@@ -93,6 +93,10 @@ python3 -m unittest discover -s tests -v
 ```
 
 The scanner flags common disclosure patterns and prohibited local-data directories. It does not inspect every binary, infer code ownership, verify third-party licenses, or replace human review.
+
+## CI policy
+
+GitHub Actions does not run on every push. The lightweight safety checks run only for pull requests that change relevant source/configuration paths, or when manually dispatched. The DESeq2 integration job is manual opt-in because installing Bioconductor dependencies is comparatively expensive. See [the workflow](.github/workflows/quality.yml).
 
 ## Development status
 
