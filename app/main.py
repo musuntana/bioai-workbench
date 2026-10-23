@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import hmac
+import os
+import re
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -69,6 +73,127 @@ async def request_validation_error(
 @app.get("/", include_in_schema=False)
 def home() -> FileResponse:
     return FileResponse(Path(__file__).parent / "templates" / "index.html")
+
+
+
+INPUT_FILENAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}\.csv$")
+MAX_INPUT_FILE_BYTES = 25 * 1024 * 1024
+
+
+def _validate_csv_file(path: Path) -> None:
+    """Validate a bounded UTF-8 CSV's basic table shape without loading it all into memory."""
+    try:
+        with path.open("r", encoding="utf-8-sig", newline="") as stream:
+            reader = csv.reader(stream, strict=True)
+            header = next(reader, None)
+            if (
+                header is None
+                or len(header) < 2
+                or any(not item.strip() for item in header)
+                or len({item.strip().casefold() for item in header}) != len(header)
+            ):
+                raise ValueError("CSV must have at least two unique, non-empty column names.")
+            row_count = 0
+            for row in reader:
+                if not row:
+                    continue
+                if len(row) != len(header):
+                    raise ValueError("CSV rows must have the same number of columns as the header.")
+                if all(not item.strip() for item in row):
+                    continue
+                row_count += 1
+            if row_count == 0:
+                raise ValueError("CSV must contain at least one data row.")
+    except (UnicodeDecodeError, csv.Error) as exc:
+        raise ValueError("File must be a valid UTF-8 CSV.") from exc
+
+
+@app.get("/api/v1/inputs")
+def list_input_files() -> dict[str, list[dict[str, Any]]]:
+    """List CSV inputs under the configured root without revealing absolute paths."""
+    root = config.input_root.resolve()
+    files: list[dict[str, Any]] = []
+    for path in root.rglob("*"):
+        if path.suffix.lower() != ".csv" or path.is_symlink() or not path.is_file():
+            continue
+        relative = path.relative_to(root)
+        current = root
+        unsafe = False
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                unsafe = True
+                break
+        if unsafe:
+            continue
+        try:
+            resolved = path.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if not resolved.is_relative_to(root) or not resolved.is_file():
+            continue
+        files.append(
+            {
+                "path": relative.as_posix(),
+                "size_bytes": resolved.stat().st_size,
+            }
+        )
+    files.sort(key=lambda item: item["path"].casefold())
+    return {"files": files}
+
+
+@app.put("/api/v1/inputs/{filename}", status_code=201)
+async def upload_input_file(filename: str, request: Request) -> dict[str, Any]:
+    """Upload one CSV to the input root; never overwrite an existing file."""
+    if not INPUT_FILENAME_PATTERN.fullmatch(filename) or ".." in filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Filename must be a simple CSV filename using letters, numbers, dot, dash, or underscore.",
+        )
+
+    root = config.input_root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / filename
+    if target.exists() or target.is_symlink():
+        raise HTTPException(status_code=409, detail="A file with this name already exists.")
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".bioai-upload-", suffix=".tmp", dir=root
+    )
+    temporary_path = Path(temporary_name)
+    size = 0
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > MAX_INPUT_FILE_BYTES:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"CSV exceeds the {MAX_INPUT_FILE_BYTES // (1024 * 1024)} MiB upload limit.",
+                    )
+                stream.write(chunk)
+
+        if size == 0:
+            raise HTTPException(status_code=400, detail="Uploaded CSV is empty.")
+
+        try:
+            _validate_csv_file(temporary_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        try:
+            # A same-filesystem hard link publishes the complete file atomically and
+            # fails if another request created the target in the meantime.
+            os.link(temporary_path, target)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="A file with this name already exists.") from exc
+
+        return {"path": filename, "size_bytes": size}
+    finally:
+        try:
+            temporary_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 @app.get("/healthz")

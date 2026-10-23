@@ -35,6 +35,15 @@
 
 **Exit gate:** Python/API checks pass, the synthetic DESeq2 workflow succeeds through the UI/API, and timeout/failure/output-manifest evidence is recorded. This milestone does not mark M1's R verification as complete.
 
+## M1.6 — Input experience
+
+- [x] Upload local CSV inputs through the UI/API without requiring manual filesystem placement.
+- [x] List available CSVs using relative paths and sizes; select counts and metadata inputs from the UI.
+- [x] Enforce upload size, safe filename, UTF-8/CSV structure, and no-overwrite rules.
+- [ ] Validate uploaded files against the role-specific counts/metadata schemas before a run is submitted.
+
+**Exit gate:** users can upload, select, and submit synthetic inputs through the UI; malformed and oversized uploads are rejected, and existing files are not silently replaced.
+
 ## M2 — Workflow orchestration
 
 - [ ] Wrap the workflow in Snakemake after M1 is stable.
@@ -62,6 +71,7 @@
 - [x] Persist and expose validated parameter snapshots with each run record.
 - [x] Expose structured validation results and validation errors in a stable response contract.
 - [x] Add a run-history UI with status filtering and links into run details after the history API stabilized.
+- [x] Add local CSV upload/discovery endpoints and UI selection for counts/metadata inputs, with size, filename, CSV-shape, and no-overwrite checks.
 - [ ] Add optional local model support only if it improves a measured use case.
 
 ## Public release gate for migrated scripts

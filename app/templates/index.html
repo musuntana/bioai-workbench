@@ -53,14 +53,31 @@
   </section>
 
   <section class="panel">
+    <h2>Input files</h2>
+    <p class="muted">Upload UTF-8 CSV files up to 25 MiB each. Existing files are never overwritten. Files remain on this machine under <code>BIOAI_INPUT_ROOT</code>.</p>
+    <div class="history-controls">
+      <label>Choose CSV to upload
+        <input id="input-upload-file" type="file" accept=".csv,text/csv">
+      </label>
+      <button id="upload-input-button" type="button">Upload CSV</button>
+    </div>
+    <p id="input-summary" class="muted" role="status" aria-live="polite">Loading available input files…</p>
+    <button id="refresh-inputs" type="button">Refresh input files</button>
+  </section>
+
+  <section class="panel">
     <h2>Run differential expression</h2>
-    <p class="muted">Place CSV inputs under <code>BIOAI_INPUT_ROOT</code> (default <code>data/inputs/</code>) and enter relative file names. Use synthetic data first.</p>
+    <p class="muted">Upload or select CSV inputs stored under <code>BIOAI_INPUT_ROOT</code> (default <code>data/inputs/</code>). Use synthetic data first.</p>
     <form id="run-form">
       <label>Counts CSV
-        <input name="counts_file" value="counts.csv" required>
+        <select id="counts-file" name="counts_file" required>
+          <option value="">Select a counts CSV…</option>
+        </select>
       </label>
       <label>Metadata CSV
-        <input name="metadata_file" value="metadata.csv" required>
+        <select id="metadata-file" name="metadata_file" required>
+          <option value="">Select a metadata CSV…</option>
+        </select>
       </label>
       <label>Condition column
         <input name="condition" value="condition" required>
@@ -147,6 +164,76 @@
       }
     }
 
+
+    const inputUpload = document.getElementById("input-upload-file");
+    const inputSummary = document.getElementById("input-summary");
+    const countsFileSelect = document.getElementById("counts-file");
+    const metadataFileSelect = document.getElementById("metadata-file");
+
+    async function loadInputFiles() {
+      const previousCounts = countsFileSelect.value;
+      const previousMetadata = metadataFileSelect.value;
+      inputSummary.textContent = "Loading available input files…";
+      try {
+        const response = await fetch("/api/v1/inputs");
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not load input files.");
+
+        function populate(select, placeholder, preferred, previous) {
+          select.textContent = "";
+          const empty = document.createElement("option");
+          empty.value = "";
+          empty.textContent = placeholder;
+          select.appendChild(empty);
+          for (const file of payload.files) {
+            const option = document.createElement("option");
+            option.value = file.path;
+            option.textContent = file.path + " · " + file.size_bytes + " bytes";
+            select.appendChild(option);
+          }
+          const values = payload.files.map(file => file.path);
+          if (previous && values.includes(previous)) {
+            select.value = previous;
+          } else if (values.includes(preferred)) {
+            select.value = preferred;
+          }
+        }
+
+        populate(countsFileSelect, "Select a counts CSV…", "counts.csv", previousCounts);
+        populate(metadataFileSelect, "Select a metadata CSV…", "metadata.csv", previousMetadata);
+        inputSummary.textContent = payload.files.length
+          ? payload.files.length + " CSV file(s) available. Choose the counts matrix and metadata below."
+          : "No CSV files found. Upload a file above or place CSVs under BIOAI_INPUT_ROOT.";
+      } catch (error) {
+        inputSummary.textContent = error.message;
+      }
+    }
+
+    document.getElementById("upload-input-button").addEventListener("click", async function () {
+      const file = inputUpload.files && inputUpload.files[0];
+      if (!file) {
+        inputSummary.textContent = "Choose a CSV file first.";
+        return;
+      }
+      inputSummary.textContent = "Uploading " + file.name + "…";
+      try {
+        const response = await fetch("/api/v1/inputs/" + encodeURIComponent(file.name), {
+          method: "PUT",
+          headers: { "Content-Type": "text/csv" },
+          body: file
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Could not upload CSV.");
+        inputUpload.value = "";
+        await loadInputFiles();
+        inputSummary.textContent = "Uploaded " + payload.path + " (" + payload.size_bytes + " bytes). Select its role in the analysis form.";
+      } catch (error) {
+        inputSummary.textContent = error.message;
+      }
+    });
+
+    document.getElementById("refresh-inputs").addEventListener("click", loadInputFiles);
+
     async function refreshRun(runId, refreshToken) {
       if (runId !== activeRunId || refreshToken !== activeRefreshToken) return;
       const [statusResponse, logsResponse, artifactsResponse] = await Promise.all([
@@ -230,6 +317,7 @@
     document.getElementById("refresh-history").addEventListener("click", loadRunHistory);
     historyStatus.addEventListener("change", loadRunHistory);
     loadWorkflows();
+    loadInputFiles();
     loadRunHistory();
   </script>
 </body>

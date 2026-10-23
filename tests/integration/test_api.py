@@ -153,6 +153,102 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(traversal.status_code, 404)
             self.assertEqual(tampered.status_code, 409)
 
+
+    def test_input_upload_list_and_no_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            valid_csv = b"gene_id,sample_a,sample_b\ngene_1,4,7\ngene_2,8,9\n"
+
+            with patch("app.main.config", config):
+                uploaded = self.client.put(
+                    "/api/v1/inputs/counts.csv",
+                    content=valid_csv,
+                    headers={"content-type": "text/csv"},
+                )
+                listing = self.client.get("/api/v1/inputs")
+                duplicate = self.client.put(
+                    "/api/v1/inputs/counts.csv",
+                    content=b"gene_id,sample_a\ngene_1,99\n",
+                    headers={"content-type": "text/csv"},
+                )
+
+            self.assertEqual(uploaded.status_code, 201)
+            self.assertEqual(uploaded.json()["path"], "counts.csv")
+            self.assertEqual(uploaded.json()["size_bytes"], len(valid_csv))
+            self.assertEqual(listing.status_code, 200)
+            self.assertEqual(listing.json()["files"], [{"path": "counts.csv", "size_bytes": len(valid_csv)}])
+            self.assertNotIn(str(root), listing.text)
+            self.assertEqual(duplicate.status_code, 409)
+            self.assertEqual((root / "inputs" / "counts.csv").read_bytes(), valid_csv)
+
+    def test_input_upload_rejects_bad_names_and_malformed_csv(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            with patch("app.main.config", config):
+                bad_name = self.client.put(
+                    "/api/v1/inputs/bad%20name.csv",
+                    content=b"a,b\n1,2\n",
+                    headers={"content-type": "text/csv"},
+                )
+                malformed = self.client.put(
+                    "/api/v1/inputs/malformed.csv",
+                    content=b"a,b\n1,2,3\n",
+                    headers={"content-type": "text/csv"},
+                )
+                empty = self.client.put(
+                    "/api/v1/inputs/empty.csv",
+                    content=b"",
+                    headers={"content-type": "text/csv"},
+                )
+
+            self.assertEqual(bad_name.status_code, 400)
+            self.assertEqual(malformed.status_code, 400)
+            self.assertEqual(empty.status_code, 400)
+            self.assertFalse((root / "inputs" / "malformed.csv").exists())
+            self.assertFalse((root / "inputs" / "empty.csv").exists())
+
+    def test_input_upload_enforces_size_limit_and_cleans_temporary_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            with (
+                patch("app.main.config", config),
+                patch("app.main.MAX_INPUT_FILE_BYTES", 8),
+            ):
+                response = self.client.put(
+                    "/api/v1/inputs/large.csv",
+                    content=b"column1,column2\n1,2\n",
+                    headers={"content-type": "text/csv"},
+                )
+
+            self.assertEqual(response.status_code, 413)
+            self.assertFalse((root / "inputs" / "large.csv").exists())
+            self.assertEqual(list((root / "inputs").glob(".bioai-upload-*")), [])
+
+    def test_home_page_exposes_input_upload_controls(self) -> None:
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('id="input-upload-file"', response.text)
+        self.assertIn('id="counts-file"', response.text)
+        self.assertIn('id="metadata-file"', response.text)
+
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)
         self.assertEqual(response.status_code, 404)
