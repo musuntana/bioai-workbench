@@ -30,10 +30,11 @@
     #results-table th, #results-table td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid #8884; white-space: nowrap; }
     #results-table th { font-weight: 700; }
     #results-table tbody tr.significant-row { background: #d9485f14; }
-    #volcano-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #88808; border-radius: 8px; }
+    #volcano-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #8881; border-radius: 8px; }
     #volcano-plot text { fill: currentColor; font-size: 12px; }
     #volcano-plot .grid-line { stroke: currentColor; opacity: .13; }
     #volcano-plot .axis-line { stroke: currentColor; opacity: .6; }
+    #volcano-plot .threshold-line { stroke: #d9485f; stroke-dasharray: 5 4; opacity: .65; }
     #volcano-plot .volcano-point { stroke: currentColor; stroke-width: .35; opacity: .78; }
     #volcano-plot .volcano-point.significant { fill: #d9485f; }
     #volcano-plot .volcano-point.nonsignificant { fill: #7296c8; }
@@ -407,6 +408,17 @@
       }
       element("line", { x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotHeight, class: "axis-line" });
       element("line", { x1: margin.left, y1: margin.top + plotHeight, x2: width - margin.right, y2: margin.top + plotHeight, class: "axis-line" });
+      const padjThresholdY = -Math.log10(Math.max(summary.padj_max, 1e-50));
+      if (padjThresholdY <= yMax) {
+        const thresholdY = yScale(padjThresholdY);
+        element("line", { x1: margin.left, y1: thresholdY, x2: width - margin.right, y2: thresholdY, class: "threshold-line" });
+      }
+      for (const thresholdX of [-summary.min_abs_log2fc, summary.min_abs_log2fc]) {
+        if (thresholdX >= xMin && thresholdX <= xMax) {
+          const thresholdXPosition = xScale(thresholdX);
+          element("line", { x1: thresholdXPosition, y1: margin.top, x2: thresholdXPosition, y2: margin.top + plotHeight, class: "threshold-line" });
+        }
+      }
       element("text", { x: margin.left + plotWidth / 2, y: height - 16, "text-anchor": "middle" }, "log2 fold change");
       const yLabel = element("text", {
         x: 20, y: margin.top + plotHeight / 2, "text-anchor": "middle",
