@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import hmac
+import math
 import os
 import re
 import tempfile
@@ -204,6 +205,209 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/workflows", response_model=WorkflowList)
 def workflows() -> dict[str, list[dict[str, Any]]]:
     return {"workflows": list_workflows()}
+
+
+
+def _resolve_validation_input(relative_name: str, field: str, errors: list[dict[str, str]]) -> Path | None:
+    """Resolve a request input under the configured root without leaking host paths."""
+    root = config.input_root.resolve()
+    try:
+        resolved = (root / relative_name).resolve(strict=True)
+    except (OSError, RuntimeError):
+        errors.append({"field": field, "message": "Select an existing CSV file from the input list."})
+        return None
+    if not resolved.is_relative_to(root) or not resolved.is_file() or resolved.suffix.lower() != ".csv":
+        errors.append({"field": field, "message": "Input must be a CSV file inside BIOAI_INPUT_ROOT."})
+        return None
+    return resolved
+
+
+@app.post("/api/v1/inputs/validate")
+def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
+    """Preflight counts and metadata contracts before spending time on a workflow run."""
+    errors: list[dict[str, str]] = []
+    summary: dict[str, Any] = {
+        "gene_count": 0,
+        "sample_count": 0,
+        "metadata_sample_count": 0,
+        "condition_counts": {},
+    }
+    counts_path = _resolve_validation_input(request.counts_file, "counts_file", errors)
+    metadata_path = _resolve_validation_input(request.metadata_file, "metadata_file", errors)
+    counts_samples: list[str] = []
+    gene_count = 0
+    counts_valid = False
+
+    if counts_path is not None:
+        try:
+            with counts_path.open("r", encoding="utf-8-sig", newline="") as stream:
+                reader = csv.reader(stream, strict=True)
+                header = next(reader, None)
+                if header is None or len(header) < 3:
+                    errors.append({
+                        "field": "counts_file",
+                        "message": "Counts CSV must contain gene_id plus at least two sample columns.",
+                    })
+                elif header[0] != "gene_id":
+                    errors.append({
+                        "field": "counts_file",
+                        "message": "The first counts column must be named gene_id.",
+                    })
+                elif (
+                    any(not name.strip() for name in header)
+                    or len({name.casefold() for name in header}) != len(header)
+                ):
+                    errors.append({
+                        "field": "counts_file",
+                        "message": "Counts column names must be unique and non-empty.",
+                    })
+                else:
+                    counts_samples = header[1:]
+                    summary["sample_count"] = len(counts_samples)
+                    seen_genes: set[str] = set()
+                    counts_valid = True
+                    for row_number, row in enumerate(reader, start=2):
+                        if not row:
+                            continue
+                        if len(row) != len(header):
+                            errors.append({
+                                "field": "counts_file",
+                                "message": f"Counts row {row_number} has a different number of columns than the header.",
+                            })
+                            counts_valid = False
+                            break
+                        gene_id = row[0]
+                        if not gene_id.strip() or gene_id in seen_genes:
+                            errors.append({
+                                "field": "counts_file",
+                                "message": f"Counts row {row_number} has a missing or duplicate gene ID.",
+                            })
+                            counts_valid = False
+                            break
+                        seen_genes.add(gene_id)
+                        for value in row[1:]:
+                            try:
+                                count = float(value)
+                            except (TypeError, ValueError):
+                                count = math.nan
+                            if (
+                                not math.isfinite(count)
+                                or count < 0
+                                or count != math.floor(count)
+                                or count > 2147483647
+                            ):
+                                errors.append({
+                                    "field": "counts_file",
+                                    "message": f"Counts row {row_number} contains a non-integer, negative, missing, or out-of-range count.",
+                                })
+                                counts_valid = False
+                                break
+                        if not counts_valid:
+                            break
+                        gene_count += 1
+                    if counts_valid and gene_count == 0:
+                        errors.append({
+                            "field": "counts_file",
+                            "message": "Counts CSV must contain at least one gene row.",
+                        })
+                        counts_valid = False
+                    summary["gene_count"] = gene_count
+        except (UnicodeDecodeError, csv.Error, OSError):
+            errors.append({
+                "field": "counts_file",
+                "message": "Counts CSV could not be parsed as a UTF-8 table.",
+            })
+
+    metadata_valid = False
+    metadata_samples: list[str] = []
+    condition_counts: dict[str, int] = {}
+    if metadata_path is not None:
+        try:
+            with metadata_path.open("r", encoding="utf-8-sig", newline="") as stream:
+                reader = csv.reader(stream, strict=True)
+                header = next(reader, None)
+                if header is None or len(header) < 2:
+                    errors.append({
+                        "field": "metadata_file",
+                        "message": "Metadata CSV must contain column names and at least one data column.",
+                    })
+                elif (
+                    any(not name.strip() for name in header)
+                    or len({name.casefold() for name in header}) != len(header)
+                ):
+                    errors.append({
+                        "field": "metadata_file",
+                        "message": "Metadata column names must be unique and non-empty.",
+                    })
+                elif "sample_id" not in header or request.condition not in header:
+                    errors.append({
+                        "field": "metadata_file",
+                        "message": f"Metadata CSV must include sample_id and {request.condition}.",
+                    })
+                else:
+                    sample_index = header.index("sample_id")
+                    condition_index = header.index(request.condition)
+                    seen_samples: set[str] = set()
+                    metadata_valid = True
+                    for row_number, row in enumerate(reader, start=2):
+                        if not row:
+                            continue
+                        if len(row) != len(header):
+                            errors.append({
+                                "field": "metadata_file",
+                                "message": f"Metadata row {row_number} has a different number of columns than the header.",
+                            })
+                            metadata_valid = False
+                            break
+                        sample_id = row[sample_index]
+                        condition_value = row[condition_index]
+                        if not sample_id.strip() or sample_id in seen_samples:
+                            errors.append({
+                                "field": "metadata_file",
+                                "message": f"Metadata row {row_number} has a missing or duplicate sample_id.",
+                            })
+                            metadata_valid = False
+                            break
+                        seen_samples.add(sample_id)
+                        metadata_samples.append(sample_id)
+                        if condition_value not in {request.reference, request.contrast}:
+                            errors.append({
+                                "field": "condition",
+                                "message": "The selected condition column must contain only the chosen reference and contrast levels.",
+                            })
+                            metadata_valid = False
+                            break
+                        condition_counts[condition_value] = condition_counts.get(condition_value, 0) + 1
+                    summary["metadata_sample_count"] = len(metadata_samples)
+                    summary["condition_counts"] = condition_counts
+                    if metadata_valid and not metadata_samples:
+                        errors.append({
+                            "field": "metadata_file",
+                            "message": "Metadata CSV must contain at least one sample row.",
+                        })
+                        metadata_valid = False
+        except (UnicodeDecodeError, csv.Error, OSError):
+            errors.append({
+                "field": "metadata_file",
+                "message": "Metadata CSV could not be parsed as a UTF-8 table.",
+            })
+
+    if counts_path is not None and metadata_path is not None and counts_valid and metadata_valid:
+        if set(counts_samples) != set(metadata_samples) or len(counts_samples) != len(metadata_samples):
+            errors.append({
+                "field": "metadata_file",
+                "message": "Counts sample columns and metadata sample_id values must match exactly.",
+            })
+        if (
+            condition_counts.get(request.reference, 0) < 2
+            or condition_counts.get(request.contrast, 0) < 2
+        ):
+            errors.append({
+                "field": "condition",
+                "message": "At least two samples per condition are required.",
+            })
+
+    return {"valid": not errors, "errors": errors, "summary": summary}
 
 
 @app.post("/api/v1/runs", response_model=RunAccepted, status_code=202)

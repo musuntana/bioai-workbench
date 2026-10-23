@@ -248,6 +248,92 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('id="input-upload-file"', response.text)
         self.assertIn('id="counts-file"', response.text)
         self.assertIn('id="metadata-file"', response.text)
+        self.assertIn('id="validate-inputs"', response.text)
+        self.assertIn('/api/v1/inputs/validate', response.text)
+
+
+    def test_preflight_validation_accepts_matching_deseq2_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            (config.input_root / "counts.csv").write_text(
+                "gene_id,s1,s2,s3,s4\ngene_1,1,2,3,4\ngene_2,5,6,7,8\n",
+                encoding="utf-8",
+            )
+            (config.input_root / "metadata.csv").write_text(
+                "sample_id,condition\ns1,control\ns2,control\ns3,treatment\ns4,treatment\n",
+                encoding="utf-8",
+            )
+            payload = {
+                "counts_file": "counts.csv",
+                "metadata_file": "metadata.csv",
+                "condition": "condition",
+                "reference": "control",
+                "contrast": "treatment",
+                "alpha": 0.05,
+            }
+            with patch("app.main.config", config):
+                response = self.client.post("/api/v1/inputs/validate", json=payload)
+
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertTrue(result["valid"])
+            self.assertEqual(result["summary"]["gene_count"], 2)
+            self.assertEqual(result["summary"]["sample_count"], 4)
+            self.assertEqual(result["summary"]["condition_counts"], {"control": 2, "treatment": 2})
+
+    def test_preflight_validation_rejects_sample_mismatch_and_invalid_counts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+            config.prepare()
+            (config.input_root / "counts.csv").write_text(
+                "gene_id,s1,s2,s3,s4\ngene_1,1,-2,3,4\ngene_2,5,6,7,8\n",
+                encoding="utf-8",
+            )
+            (config.input_root / "metadata.csv").write_text(
+                "sample_id,condition\ns1,control\ns2,control\ns3,treatment\nsX,treatment\n",
+                encoding="utf-8",
+            )
+            payload = {
+                "counts_file": "counts.csv",
+                "metadata_file": "metadata.csv",
+                "condition": "condition",
+                "reference": "control",
+                "contrast": "treatment",
+                "alpha": 0.05,
+            }
+            with patch("app.main.config", config):
+                response = self.client.post("/api/v1/inputs/validate", json=payload)
+
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertFalse(result["valid"])
+            self.assertIn("counts_file", {error["field"] for error in result["errors"]})
+            self.assertIn("metadata_file", {error["field"] for error in result["errors"]})
+
+    def test_preflight_validation_rejects_missing_files_without_exposing_paths(self) -> None:
+        payload = {
+            "counts_file": "missing-counts.csv",
+            "metadata_file": "missing-metadata.csv",
+            "condition": "condition",
+            "reference": "control",
+            "contrast": "treatment",
+            "alpha": 0.05,
+        }
+        response = self.client.post("/api/v1/inputs/validate", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["valid"])
+        self.assertNotIn(str(PROJECT_ROOT), response.text)
 
     def test_unknown_run_is_not_found(self) -> None:
         response = self.client.get("/api/v1/runs/" + "f" * 32)
