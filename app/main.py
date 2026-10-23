@@ -589,12 +589,15 @@ def get_run_results(
                 if not gene_id.strip():
                     raise HTTPException(status_code=409, detail="Result artifact contains an empty gene ID.")
                 row: dict[str, Any] = {"gene_id": gene_id}
+                numeric_columns = {"baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"}
                 for column in columns:
                     if column == "gene_id":
                         continue
                     raw_value = raw_row.get(column)
-                    parsed = _parse_result_number(raw_value)
-                    row[column] = parsed if parsed is not None or not raw_value else raw_value
+                    if column in numeric_columns:
+                        row[column] = _parse_result_number(raw_value)
+                    else:
+                        row[column] = raw_value
                 row["significant"] = _is_significant(row, padj_max, min_abs_log2fc)
                 all_rows.append(row)
     except HTTPException:
