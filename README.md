@@ -59,7 +59,7 @@ Optional integration smoke test (requires the same dependencies):
 bash scripts/smoke_test_deseq2.sh
 ```
 
-The example uses generated synthetic counts only. It has not yet been runtime-verified in this repository; please treat the smoke-test result as pending until it is run successfully.
+The example uses generated synthetic counts only. It has not yet been runtime-verified in an R/Bioconductor environment; please treat the smoke-test result as pending until it is run successfully.
 
 ## Architecture direction
 
@@ -83,6 +83,17 @@ Biomni and ClawBio are candidates for evaluation, not mandatory runtime dependen
 
 Do not copy scripts from a workplace or private repository into this public repository merely by renaming variables or removing company names. First confirm reuse rights, classify sensitive dependencies, write a clean interface specification, then either refactor code you are authorized to release or implement the generic workflow independently. Never upload real client/patient data, internal endpoints, credentials, private reference databases, or report templates.
 
+## Local safety checks
+
+Run the standard-library source audit and its unit tests before publishing source/config changes:
+
+```bash
+python3 scripts/audit_public_release.py
+python3 -m unittest discover -s tests -v
+```
+
+The scanner flags common disclosure patterns and prohibited local-data directories. It does not inspect every binary, infer code ownership, verify third-party licenses, or replace human review.
+
 ## Development status
 
-The repository foundation is being established. A workflow is not considered complete until its inputs, outputs, runtime dependencies, validation behavior, and reproducibility evidence are documented and tested.
+The repository foundation and a clean-room DESeq2 workflow implementation are present. The DESeq2 integration run remains unverified until executed in an R/Bioconductor environment. A workflow is not considered complete until its inputs, outputs, runtime dependencies, validation behavior, and reproducibility evidence are documented and tested.
