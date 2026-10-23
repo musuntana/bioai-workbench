@@ -15,7 +15,7 @@ The repository has one clean-room DESeq2 CLI workflow but no shared API, run sta
 4. Use FastAPI for a thin local API and static UI.
 5. Persist run state and artifacts on the local filesystem for the first vertical.
 6. Validate input paths beneath a configured input root; launch subprocesses without a shell and with time/log limits.
-7. Use \`uv\` and \`pyproject.toml\` for the Python development environment.
+7. Use `uv` and `pyproject.toml` for the Python development environment.
 
 ## Consequences
 
