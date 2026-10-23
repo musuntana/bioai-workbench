@@ -31,8 +31,8 @@ class PublicReleaseAuditTests(unittest.TestCase):
             personal_path = "/" + "Users/alice/private-data"
             (root / "config.py").write_text(
                 f'endpoint = "{private_ip}"\n'
-                + credential_line + "\\n"
-                + f'cache = "{personal_path}"\\n',
+                + credential_line + "\n"
+                + f'cache = "{personal_path}"\n',
                 encoding="utf-8",
             )
             findings = AUDIT.scan_root(root)
