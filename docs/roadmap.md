@@ -4,20 +4,21 @@
 
 - [x] Establish project boundaries and public-release rules.
 - [x] Document architecture and source-code migration process.
-- [ ] Add a minimal synthetic-data DESeq2 example.
+- [x] Add a synthetic-data DESeq2 example generator and CLI runner.
 - [ ] Add repository checks for accidental secrets and private data patterns.
 
 **Exit gate:** public repository contains only reviewed documentation and original/authorized code; no workplace scripts or real research data have been imported.
 
 ## M1 — First reproducible workflow
 
-- [ ] Define counts/metadata schemas and validation errors.
-- [ ] Implement a generic DESeq2 workflow using synthetic input data.
-- [ ] Save result table, session information, parameters, and a run manifest.
-- [ ] Test invalid metadata, missing samples, non-integer counts, and successful execution.
-- [ ] Document a one-command local run.
+- [x] Define counts/metadata schemas and validation behavior.
+- [x] Implement a clean-room DESeq2 CLI workflow using synthetic input data.
+- [x] Save full/significant result tables, session information, parameters, and a run manifest with input/output fingerprints.
+- [x] Add an opt-in local integration smoke-test script.
+- [ ] Run the smoke test in a clean R/Bioconductor environment and exercise failure cases.
+- [ ] Document and pin a tested R/DESeq2 dependency combination.
 
-**Exit gate:** a clean environment can run the synthetic example and produce deterministic, inspectable artifacts. Statistical output should be validated against the documented fixture; do not claim clinical validity.
+**Status:** implementation is present; runtime verification is pending. **Exit gate:** a clean environment can run the synthetic example and produce inspectable artifacts, and failure cases are tested. Statistical output should be validated against the documented fixture; do not claim clinical validity.
 
 ## M2 — Workflow orchestration
 
