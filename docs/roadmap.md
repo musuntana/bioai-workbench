@@ -21,6 +21,18 @@
 
 **Status:** implementation is present; runtime verification is pending. **Exit gate:** a clean environment can run the synthetic example and produce inspectable artifacts, and failure cases are tested. Statistical output should be validated against the documented fixture; do not claim clinical validity.
 
+## M1.5 — Open-source product skeleton
+
+- [x] Add a `uv`-managed Python project and FastAPI API/UI.
+- [x] Add a registered DESeq2 workflow contract and preserve the legacy CLI entrypoint.
+- [x] Add deterministic, approval-gated planning over registered workflow IDs only.
+- [x] Add file-backed run state, bounded subprocess execution, timeout/log limits, and relative input-root checks.
+- [x] Add artifact manifests with relative paths and SHA-256 checksums.
+- [x] Add unit, API integration, and workflow contract tests.
+- [ ] Complete local end-to-end execution through the API in a clean R/DESeq2 environment.
+
+**Exit gate:** Python/API checks pass, the synthetic DESeq2 workflow succeeds through the UI/API, and timeout/failure/output-manifest evidence is recorded. This milestone does not mark M1's R verification as complete.
+
 ## M2 — Workflow orchestration
 
 - [ ] Wrap the workflow in Snakemake after M1 is stable.
