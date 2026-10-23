@@ -30,14 +30,14 @@
     #results-table th, #results-table td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid #8884; white-space: nowrap; }
     #results-table th { font-weight: 700; }
     #results-table tbody tr.significant-row { background: #d9485f14; }
-    #volcano-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #8881; border-radius: 8px; }
-    #volcano-plot text { fill: currentColor; font-size: 12px; }
-    #volcano-plot .grid-line { stroke: currentColor; opacity: .13; }
-    #volcano-plot .axis-line { stroke: currentColor; opacity: .6; }
-    #volcano-plot .threshold-line { stroke: #d9485f; stroke-dasharray: 5 4; opacity: .65; }
-    #volcano-plot .volcano-point { stroke: currentColor; stroke-width: .35; opacity: .78; }
-    #volcano-plot .volcano-point.significant { fill: #d9485f; }
-    #volcano-plot .volcano-point.nonsignificant { fill: #7296c8; }
+    #volcano-plot, #ma-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #8881; border-radius: 8px; }
+    #volcano-plot text, #ma-plot text { fill: currentColor; font-size: 12px; }
+    #volcano-plot .grid-line, #ma-plot .grid-line { stroke: currentColor; opacity: .13; }
+    #volcano-plot .axis-line, #ma-plot .axis-line { stroke: currentColor; opacity: .6; }
+    #volcano-plot .threshold-line, #ma-plot .threshold-line { stroke: #d9485f; stroke-dasharray: 5 4; opacity: .65; }
+    #volcano-plot .volcano-point, #ma-plot .volcano-point { stroke: currentColor; stroke-width: .35; opacity: .78; }
+    #volcano-plot .volcano-point.significant, #ma-plot .volcano-point.significant { fill: #d9485f; }
+    #volcano-plot .volcano-point.nonsignificant, #ma-plot .volcano-point.nonsignificant { fill: #7296c8; }
     .volcano-legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; }
     .legend-dot { display: inline-block; width: .65rem; height: .65rem; border-radius: 50%; margin-right: .3rem; }
     .legend-significant { background: #d9485f; }
@@ -184,6 +184,10 @@
       <span><span class="legend-dot legend-nonsignificant"></span>Does not pass thresholds</span>
     </div>
     <svg id="volcano-plot" viewBox="0 0 900 420" role="img" aria-label="Volcano plot of log2 fold change against adjusted p-value"></svg>
+
+    <h3>MA plot</h3>
+    <p id="ma-summary" class="muted">Mean expression is shown on a log10 scale; log2 fold change is shown on the vertical axis.</p>
+    <svg id="ma-plot" viewBox="0 0 900 420" role="img" aria-label="MA plot of log2 fold change against mean expression"></svg>
 
     <h3>Gene table</h3>
     <div class="result-table-wrap">
@@ -432,6 +436,8 @@
     const resultsNext = document.getElementById("results-next");
     const volcanoPlot = document.getElementById("volcano-plot");
     const volcanoSummary = document.getElementById("volcano-summary");
+    const maPlot = document.getElementById("ma-plot");
+    const maSummary = document.getElementById("ma-summary");
 
     function formatResultValue(field, value) {
       if (value === null || value === undefined || value === "") return "—";
@@ -538,6 +544,92 @@
         (summary.plot_points_truncated ? " Points are deterministically sampled to keep the plot responsive." : "");
     }
 
+
+    function drawMAPlot(points, summary) {
+      maPlot.textContent = "";
+      const width = 900;
+      const height = 420;
+      const margin = { top: 24, right: 24, bottom: 64, left: 76 };
+      const plotWidth = width - margin.left - margin.right;
+      const plotHeight = height - margin.top - margin.bottom;
+      const validPoints = points.filter(point =>
+        Number.isFinite(point.baseMean) &&
+        point.baseMean >= 0 &&
+        Number.isFinite(point.log2FoldChange)
+      );
+      maPlot.setAttribute("aria-label",
+        "MA plot showing " + validPoints.length + " genes. Significant genes are highlighted.");
+      function element(name, attributes, text) {
+        const node = document.createElementNS(SVG_NS, name);
+        for (const [key, value] of Object.entries(attributes || {})) node.setAttribute(key, String(value));
+        if (text !== undefined) node.textContent = text;
+        maPlot.appendChild(node);
+        return node;
+      }
+      if (!validPoints.length) {
+        element("text", { x: width / 2, y: height / 2, "text-anchor": "middle" },
+          "No genes have both mean expression and log2 fold change.");
+        maSummary.textContent = "No plottable rows were found in this result artifact.";
+        return;
+      }
+
+      const transformedX = validPoints.map(point => Math.log10(point.baseMean + 1));
+      const xMin = 0;
+      const xMax = Math.max(1, ...transformedX) * 1.05;
+      const maxAbsFoldChange = Math.max(1, ...validPoints.map(point => Math.abs(point.log2FoldChange)));
+      const yMax = Math.min(10, Math.max(1, Math.ceil(maxAbsFoldChange / 2) * 2));
+      const xScale = value => margin.left + ((value - xMin) / (xMax - xMin)) * plotWidth;
+      const yScale = value => margin.top + plotHeight - ((value + yMax) / (2 * yMax)) * plotHeight;
+
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = (-yMax) + ((2 * yMax) * tick) / 4;
+        const y = yScale(value);
+        element("line", { x1: margin.left, y1: y, x2: width - margin.right, y2: y, class: "grid-line" });
+        element("text", { x: margin.left - 10, y: y + 4, "text-anchor": "end" }, value.toFixed(1));
+      }
+      for (let tick = 0; tick <= 4; tick += 1) {
+        const value = (xMax * tick) / 4;
+        const x = xScale(value);
+        element("line", { x1: x, y1: margin.top, x2: x, y2: margin.top + plotHeight, class: "grid-line" });
+        element("text", { x, y: margin.top + plotHeight + 22, "text-anchor": "middle" }, value.toFixed(2));
+      }
+      element("line", {
+        x1: margin.left, y1: yScale(0), x2: width - margin.right, y2: yScale(0), class: "axis-line"
+      });
+      element("line", {
+        x1: margin.left, y1: margin.top, x2: margin.left, y2: margin.top + plotHeight, class: "axis-line"
+      });
+      element("text", {
+        x: margin.left + plotWidth / 2, y: height - 16, "text-anchor": "middle"
+      }, "log10(mean expression + 1)");
+      const yLabel = element("text", {
+        x: 20, y: margin.top + plotHeight / 2, "text-anchor": "middle",
+        transform: "rotate(-90 20 " + (margin.top + plotHeight / 2) + ")"
+      }, "log2 fold change");
+      yLabel.setAttribute("aria-hidden", "true");
+
+      for (const point of validPoints) {
+        const xValue = Math.log10(point.baseMean + 1);
+        const yValue = Math.max(-yMax, Math.min(yMax, point.log2FoldChange));
+        const circle = element("circle", {
+          cx: xScale(xValue),
+          cy: yScale(yValue),
+          r: point.significant ? 3.4 : 2.7,
+          class: "volcano-point " + (point.significant ? "significant" : "nonsignificant")
+        });
+        const title = document.createElementNS(SVG_NS, "title");
+        title.textContent = point.gene_id + " · mean " +
+          formatResultValue("baseMean", point.baseMean) + " · log2FC " +
+          point.log2FoldChange.toFixed(3) + " · " +
+          (point.significant ? "significant" : "not significant");
+        circle.appendChild(title);
+      }
+
+      maSummary.textContent = "Plotting " + validPoints.length + " of " +
+        summary.ma_eligible_genes + " genes, sampled across mean expression when needed. " +
+        "Y-axis display is capped at ±10 log2FC; hover points for exact values.";
+    }
+
     function renderRunResults(payload) {
       const summary = payload.summary;
       resultsSummary.textContent = "Showing " + payload.rows.length + " of " +
@@ -571,6 +663,7 @@
       resultsPrevious.disabled = resultOffset <= 0;
       resultsNext.disabled = resultOffset + payload.rows.length >= resultTotal;
       drawVolcanoPlot(payload.plot_points, summary);
+      drawMAPlot(payload.ma_points, summary);
     }
 
     async function loadRunResults(runId, offset) {
