@@ -24,6 +24,7 @@
 ## M1.5 — Open-source product skeleton
 
 - [x] Add a `uv`-managed Python project and FastAPI API/UI.
+- [x] Commit `uv.lock` and enforce locked Python dependency resolution in CI.
 - [x] Add a registered DESeq2 workflow contract and preserve the legacy CLI entrypoint.
 - [x] Add deterministic, approval-gated planning over registered workflow IDs only.
 - [x] Add file-backed run state, bounded subprocess execution, timeout/log limits, and relative input-root checks.

@@ -22,7 +22,7 @@ Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), R, and a Bioconduc
 ### 1. Install the Python environment
 
 ```bash
-uv sync --extra dev
+uv sync --locked --extra dev
 ```
 
 ### 2. Install DESeq2
@@ -113,6 +113,8 @@ docs/                         Architecture, decisions, API, reproducibility
 Relative configuration paths are resolved from the repository root. The runtime rejects absolute input paths, path traversal, and symlinks that resolve outside the input root. Generated run files are ignored by Git.
 
 ## Tests and local safety checks
+
+Python dependencies are pinned in `uv.lock`. Use `uv lock` after changing `pyproject.toml`, commit both files together, and run `uv lock --check` before opening a pull request. The R/Bioconductor environment remains a separate reproducibility task.
 
 ```bash
 uv run pytest

@@ -7,6 +7,7 @@ BioAI Workbench prioritizes small, testable integrations with mature bioinformat
 - Keep deterministic workflows usable without an LLM.
 - Add tests for input validation, expected outputs, and failure behavior.
 - Document runtime requirements and commands needed to reproduce results.
+- When changing Python dependencies, regenerate and commit `uv.lock` with `pyproject.toml`; verify it with `uv lock --check`.
 - Use synthetic or explicitly licensed public data in examples and tests.
 - Record important architecture choices in `docs/decisions/` when that directory is introduced.
 - Keep changes narrow; do not add infrastructure before a demonstrated requirement exists.
