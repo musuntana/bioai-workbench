@@ -96,7 +96,7 @@ The scanner flags common disclosure patterns and prohibited local-data directori
 
 ## CI policy
 
-GitHub Actions does not run on every push. The lightweight safety checks run only for pull requests that change relevant source/configuration paths, or when manually dispatched. The DESeq2 integration job is manual opt-in because installing Bioconductor dependencies is comparatively expensive. See [the workflow](.github/workflows/quality.yml).
+GitHub Actions does not run on every push. The lightweight safety checks run only for pull requests that change relevant source, documentation, or configuration paths, or when manually dispatched. The DESeq2 integration job is manual opt-in because installing Bioconductor dependencies is comparatively expensive. See [the workflow](.github/workflows/quality.yml).
 
 ## Development status
 
