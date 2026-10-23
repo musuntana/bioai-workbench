@@ -29,7 +29,7 @@ on:
         type: boolean
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: quality-${{ github.event.pull_request.number || github.ref }}
@@ -55,6 +55,19 @@ jobs:
 
       - name: Sync development environment
         run: uv sync --extra dev
+
+      - name: Commit generated lockfile for one-time bootstrap
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if git status --short -- uv.lock | grep -q .; then
+            encoded_lock="$(base64 -w0 uv.lock)"
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/uv.lock" \\
+              -f message="build: add uv dependency lockfile" \\
+              -f branch="${GITHUB_HEAD_REF}" \\
+              -f content="${encoded_lock}"
+          fi
 
       - name: Compile Python safety tooling
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
