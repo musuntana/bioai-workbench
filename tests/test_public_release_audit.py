@@ -43,6 +43,20 @@ class PublicReleaseAuditTests(unittest.TestCase):
             self.assertNotIn("secret-value-not-for-output", repr(findings))
             self.assertNotIn("/" + "Users/alice/private-data", repr(findings))
 
+    def test_scans_markdown_and_text_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            personal_path = "/" + "Users/alice/private-notes"
+            (root / "README.md").write_text(
+                f"Example configuration path: {personal_path}\\n",
+                encoding="utf-8",
+            )
+            findings = AUDIT.scan_root(root)
+            self.assertIn(
+                ("README.md", 1, "personal_or_data_absolute_path"),
+                findings,
+            )
+
     def test_flags_prohibited_data_directories(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

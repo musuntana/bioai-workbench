@@ -100,6 +100,10 @@ read_and_validate_inputs <- function(counts_path, metadata_path, condition,
       any(count_matrix < 0) || any(count_matrix != floor(count_matrix))) {
     stop("Counts must be finite, non-negative integers with no missing values.", call. = FALSE)
   }
+  if (any(count_matrix > .Machine$integer.max)) {
+    stop("Counts exceed R's supported integer range; rescale or correct the input before running DESeq2.",
+         call. = FALSE)
+  }
   if (is.null(colnames(count_matrix)) || anyDuplicated(colnames(count_matrix)) ||
       any(!nzchar(colnames(count_matrix)))) {
     stop("Counts sample column names must be unique and non-empty.", call. = FALSE)

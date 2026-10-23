@@ -1,0 +1,75 @@
+name: Targeted quality gates
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/quality.yml"
+      - "scripts/**"
+      - "tests/**"
+      - "examples/deseq2/**"
+      - ".gitignore"
+      - "README.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "docs/**"
+  workflow_dispatch:
+    inputs:
+      run_r_integration:
+        description: "Install DESeq2 and run the synthetic end-to-end smoke test"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-safety:
+    name: Source safety and Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compile Python safety tooling
+        run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
+
+      - name: Check smoke-test shell syntax
+        run: bash -n scripts/smoke_test_deseq2.sh
+
+      - name: Run scanner unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Scan source and configuration for disclosure patterns
+        run: python scripts/audit_public_release.py
+
+  deseq2-integration:
+    name: Synthetic DESeq2 integration (manual opt-in)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_r_integration }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: "4.4"
+          use-public-rspm: true
+
+      - name: Install DESeq2
+        run: |
+          Rscript -e 'if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")'
+          Rscript -e 'BiocManager::install("DESeq2", ask = FALSE, update = FALSE)'
+
+      - name: Run synthetic-data end-to-end smoke test
+        run: bash scripts/smoke_test_deseq2.sh
