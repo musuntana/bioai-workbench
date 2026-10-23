@@ -174,6 +174,8 @@ if [[ "$RERUN_STATUS" != "succeeded" ]]; then
 fi
 curl -fsS "$BASE_URL/api/v1/runs/$RERUN_ID/artifacts" \
   -o "$TMP_BASE/rerun-artifacts.json"
+curl -fsS "$BASE_URL/api/v1/runs/$RERUN_ID/artifacts/differential_expression_all.csv" \
+  -o "$TMP_BASE/rerun-differential_expression_all.csv"
 curl -fsS "$BASE_URL/api/v1/runs/compare?run_a=$RUN_ID&run_b=$RERUN_ID" \
   -o "$TMP_BASE/run-comparison.json"
 curl -fsS "$BASE_URL/api/v1/runs/compare/gene?run_a=$RUN_ID&run_b=$RERUN_ID&gene_id=gene_001" \
