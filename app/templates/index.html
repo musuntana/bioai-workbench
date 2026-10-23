@@ -268,7 +268,7 @@
         }
         if (!payload.artifacts.length) lines.push("  No manifested artifacts.");
         lines.push("Limitations: " + payload.limitations);
-        comparisonSummary.textContent = lines.join("\\n");
+        comparisonSummary.textContent = lines.join("\n");
         const geneSummary = document.getElementById("gene-comparison-summary");
         const geneExport = document.getElementById("gene-comparison-export");
         geneExport.hidden = true;
