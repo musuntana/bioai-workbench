@@ -593,7 +593,9 @@ def _sample_ma_points(
     points = sorted(points, key=lambda point: (point["baseMean"], point["gene_id"].casefold()))
     if len(points) <= limit:
         return points
-    return [points[(index * len(points)) // limit] for index in range(limit)]
+    if limit == 1:
+        return [points[len(points) // 2]]
+    return [points[(index * (len(points) - 1)) // (limit - 1)] for index in range(limit)]
 
 
 @app.get("/api/v1/runs/{run_id}/results")
