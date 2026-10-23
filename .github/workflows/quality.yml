@@ -64,7 +64,7 @@ jobs:
         run: python -m py_compile scripts/audit_public_release.py tests/test_public_release_audit.py
 
       - name: Check smoke-test shell syntax
-        run: bash -n scripts/smoke_test_deseq2.sh
+        run: bash -n scripts/smoke_test_deseq2.sh && bash -n scripts/smoke_test_api.sh
 
       - name: Lint Python packages and tests
         run: uv run ruff check app agent runtime artifacts tests
@@ -83,6 +83,19 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install locked Python environment
+        run: uv sync --locked --extra dev
+
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
@@ -94,5 +107,19 @@ jobs:
           Rscript -e 'if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")'
           Rscript -e 'BiocManager::install("DESeq2", ask = FALSE, update = FALSE)'
 
-      - name: Run synthetic-data end-to-end smoke test
+      - name: Run CLI synthetic-data smoke test
         run: bash scripts/smoke_test_deseq2.sh
+
+      - name: Run API-to-DESeq2 smoke test
+        env:
+          BIOAI_SMOKE_KEEP_ARTIFACTS: "1"
+        run: bash scripts/smoke_test_api.sh
+
+      - name: Upload synthetic integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bioai-workbench-deseq2-verification
+          path: /tmp/bioai-workbench-api-smoke.*/**
+          if-no-files-found: warn
+          retention-days: 14

@@ -30,6 +30,7 @@
 - [x] Add file-backed run state, bounded subprocess execution, timeout/log limits, and relative input-root checks.
 - [x] Add artifact manifests with relative paths and SHA-256 checksums.
 - [x] Add unit, API integration, and workflow contract tests.
+- [x] Add an opt-in API-to-DESeq2 smoke test and manual CI evidence capture using synthetic data.
 - [ ] Complete local end-to-end execution through the API in a clean R/DESeq2 environment.
 
 **Exit gate:** Python/API checks pass, the synthetic DESeq2 workflow succeeds through the UI/API, and timeout/failure/output-manifest evidence is recorded. This milestone does not mark M1's R verification as complete.
