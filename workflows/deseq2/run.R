@@ -211,6 +211,11 @@ main <- function() {
     timestamp_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
     r_version = R.version.string,
     deseq2_version = as.character(utils::packageVersion("DESeq2")),
+    bioconductor_version = if (requireNamespace("BiocVersion", quietly = TRUE)) {
+      as.character(utils::packageVersion("BiocVersion"))
+    } else {
+      "unknown"
+    },
     condition_column = options$condition,
     reference_level = options$reference,
     contrast_level = options$contrast,
