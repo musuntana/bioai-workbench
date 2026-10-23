@@ -95,6 +95,11 @@ def scan_root(root: Path) -> list[tuple[str, int, str]]:
             continue
 
         relative_posix = relative.as_posix()
+        # The scanner contains literal detection rules that intentionally resemble
+        # sensitive patterns; scanning those rule definitions would self-trigger.
+        if relative_posix == "scripts/audit_public_release.py":
+            continue
+
         if any(
             relative_posix == blocked or relative_posix.startswith(blocked + "/")
             for blocked in SENSITIVE_DIRS
