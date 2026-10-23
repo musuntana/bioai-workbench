@@ -53,7 +53,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000). Use `demo/counts.csv` and `demo/metadata.csv`, then confirm the condition column, reference, and contrast.
 
-The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network.
+The API docs are available at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs). The API is unauthenticated and intended for localhost only; do not expose it to an untrusted network. After a successful run, the workbench displays the gene table and volcano plot. Search/sort/filter controls operate on the verified result artifact; the original CSV remains downloadable.
 
 ### CLI compatibility
 
@@ -84,6 +84,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `GET /api/v1/runs/{run_id}/logs` — bounded execution log.
 - `GET /api/v1/runs/{run_id}/artifacts` — relative artifact names, byte sizes, and SHA-256 checksums.
 - `GET /api/v1/runs/{run_id}/artifacts/{artifact_path}` — download a manifest-listed artifact.
+- `GET /api/v1/runs/{run_id}/results` — preview, search, sort, paginate, and filter the verified DESeq2 result table; returns capped volcano-plot points.
 
 See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
 

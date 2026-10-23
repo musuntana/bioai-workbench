@@ -19,6 +19,41 @@ class WorkbenchApiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.client = TestClient(app)
 
+    def _create_result_run(
+        self, root: Path, run_id: str, status: str = "succeeded"
+    ) -> tuple[RunManager, Path]:
+        manager = RunManager(
+            config=RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+            )
+        )
+        manager.store.create(run_id, "deseq2-basic")
+        output_dir = manager.store.run_dir(run_id) / "outputs"
+        result_file = output_dir / "differential_expression_all.csv"
+        result_file.write_text(
+            "gene_id,baseMean,log2FoldChange,lfcSE,stat,pvalue,padj\n"
+            "gene_a,100,2.5,0.5,5,0.0001,0.001\n"
+            "gene_b,50,-1.5,0.6,-2.5,0.01,0.04\n"
+            "gene_c,20,0.2,0.2,1,0.3,0.4\n"
+            "gene_d,30,-0.5,0.3,-1.6,0.1,0.2\n"
+            "gene_e,10,1.2,0.8,1.5,0.12,0.3\n"
+            "gene_f,5,-2.2,1.0,-2.2,,\n",
+            encoding="utf-8",
+        )
+        manifest = write_artifact_manifest(
+            output_dir, run_id=run_id, workflow_id="deseq2-basic"
+        )
+        manager.store.update(
+            run_id,
+            status=status,
+            finished_at="2026-10-23T00:00:00+00:00" if status in {"succeeded", "failed"} else None,
+            exit_code=0 if status == "succeeded" else (1 if status == "failed" else None),
+            artifact_count=len(manifest["artifacts"]),
+        )
+        return manager, result_file
+
     def test_health_endpoint(self) -> None:
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)
@@ -242,6 +277,81 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertFalse((root / "inputs" / "large.csv").exists())
             self.assertEqual(list((root / "inputs").glob(".bioai-upload-*")), [])
 
+
+    def test_results_endpoint_filters_paginates_and_returns_volcano_points(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_id = "d" * 32
+            manager, _ = self._create_result_run(root, run_id)
+            with patch("app.main.run_manager", manager):
+                page = self.client.get(
+                    f"/api/v1/runs/{run_id}/results",
+                    params={"limit": 2, "offset": 0},
+                )
+                significant = self.client.get(
+                    f"/api/v1/runs/{run_id}/results",
+                    params={
+                        "significant_only": "true",
+                        "padj_max": 0.05,
+                        "min_abs_log2fc": 1,
+                        "limit": 100,
+                    },
+                )
+                sorted_rows = self.client.get(
+                    f"/api/v1/runs/{run_id}/results",
+                    params={"sort_by": "log2FoldChange", "sort_order": "desc", "limit": 2},
+                )
+
+            self.assertEqual(page.status_code, 200)
+            payload = page.json()
+            self.assertEqual(payload["filtered_genes"], 6)
+            self.assertEqual([row["gene_id"] for row in payload["rows"]], ["gene_a", "gene_b"])
+            self.assertEqual(payload["summary"]["total_genes"], 6)
+            self.assertEqual(payload["summary"]["significant_genes"], 2)
+            self.assertEqual(payload["summary"]["missing_padj_genes"], 1)
+            self.assertEqual(payload["summary"]["plot_eligible_genes"], 5)
+            self.assertEqual(len(payload["plot_points"]), 5)
+            self.assertFalse(payload["summary"]["plot_points_truncated"])
+            self.assertEqual(
+                {point["gene_id"] for point in payload["plot_points"] if point["significant"]},
+                {"gene_a", "gene_b"},
+            )
+
+            self.assertEqual(significant.status_code, 200)
+            self.assertEqual(significant.json()["filtered_genes"], 2)
+            self.assertEqual(
+                [row["gene_id"] for row in significant.json()["rows"]],
+                ["gene_a", "gene_b"],
+            )
+            self.assertEqual(sorted_rows.status_code, 200)
+            self.assertEqual(
+                [row["gene_id"] for row in sorted_rows.json()["rows"]],
+                ["gene_a", "gene_e"],
+            )
+
+    def test_results_endpoint_requires_success_and_verified_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_id = "c" * 32
+            manager, result_file = self._create_result_run(root, run_id, status="running")
+            with patch("app.main.run_manager", manager):
+                running = self.client.get(f"/api/v1/runs/{run_id}/results")
+                manager.store.update(run_id, status="succeeded")
+                result_file.write_text(result_file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+                tampered = self.client.get(f"/api/v1/runs/{run_id}/results")
+
+            self.assertEqual(running.status_code, 409)
+            self.assertEqual(tampered.status_code, 409)
+            self.assertIn("checksum", tampered.json()["detail"].lower())
+
+    def test_results_endpoint_rejects_invalid_filters(self) -> None:
+        response = self.client.get(
+            "/api/v1/runs/" + "a" * 32 + "/results",
+            params={"sort_by": "arbitrary-column", "padj_max": 2},
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "VALIDATION_ERROR")
+
     def test_home_page_exposes_input_upload_controls(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -250,6 +360,9 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('id="metadata-file"', response.text)
         self.assertIn('id="validate-inputs"', response.text)
         self.assertIn('/api/v1/inputs/validate', response.text)
+        self.assertIn('id="results-panel"', response.text)
+        self.assertIn('id="volcano-plot"', response.text)
+        self.assertIn('/results?', response.text)
 
 
     def test_preflight_validation_accepts_matching_deseq2_inputs(self) -> None:

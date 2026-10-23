@@ -47,6 +47,23 @@ curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
 The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter; selecting a record opens its current status, logs, and artifact checksums.
 
 
+## Preview differential-expression results
+
+After the run status becomes `succeeded`, query the verified full result table. The endpoint refuses to preview results for unfinished/failed runs and rechecks the artifact SHA-256 before parsing it.
+
+```bash
+curl "http://127.0.0.1:8000/api/v1/runs/<run_id>/results?limit=25&offset=0&padj_max=0.05&min_abs_log2fc=1"
+curl "http://127.0.0.1:8000/api/v1/runs/<run_id>/results?significant_only=true&sort_by=padj&sort_order=asc"
+```
+
+Query parameters:
+- `limit` (1–100) and `offset` for table pagination.
+- `q` for a case-insensitive gene-ID search.
+- `significant_only=true` to show only genes passing both thresholds.
+- `padj_max` (default `0.05`) and `min_abs_log2fc` (default `1`) define significance.
+- `sort_by`: `padj`, `log2FoldChange`, `baseMean`, or `gene_id`; `sort_order`: `asc` or `desc`.
+
+The response includes the current page, total matching rows, result summary, and `plot_points` for the volcano chart. Missing adjusted p-values are returned as `null` and are excluded from the plot. The plot is capped at 5,000 points, preserving significant points when possible; use the full CSV download for complete, unmodified results. This endpoint is a visualization aid, not a substitute for scientific review.
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.
