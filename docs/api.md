@@ -73,6 +73,17 @@ Query parameters:
 - `sort_by`: `padj`, `log2FoldChange`, `baseMean`, or `gene_id`; `sort_order`: `asc` or `desc`.
 
 The response includes the current page, total matching rows, result summary, `plot_points` for the volcano chart, and `ma_points` for an MA plot (log10(mean expression + 1) versus log2 fold change). MA points are deterministically sampled across mean expression when more than 5,000 genes are plottable. Missing adjusted p-values are returned as `null` and are excluded from the plot. The plot is capped at 5,000 points, preserving significant points when possible; use the full CSV download for complete, unmodified results. This endpoint is a visualization aid, not a substitute for scientific review.
+## Export filtered gene results
+
+The workbench can download **all genes matching the currently applied search, significance thresholds, and sort order**, not only the visible table page. The export reuses the same run-status, manifest SHA-256, data-schema, and size/row validation as result preview.
+
+```bash
+curl -fOJ "http://127.0.0.1:8000/api/v1/runs/<run_id>/results/export?significant_only=true&padj_max=0.05&min_abs_log2fc=1&sort_by=padj&sort_order=asc"
+```
+
+Use the same filters as the result preview (`q`, `significant_only`, `padj_max`, `min_abs_log2fc`, `sort_by`, `sort_order`), without `limit` or `offset`. Original CSV columns and their string values are preserved, including NA/empty statistics. A zero-match export contains only the CSV header. Original unfiltered results remain available via the artifact download endpoint.
+
+The export preserves gene identifiers exactly for scientific use. When opening untrusted CSV content in spreadsheet software, beware that spreadsheet applications may interpret cell values starting with formula characters as formulas; inspect imported data and disable formula evaluation when appropriate.
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.

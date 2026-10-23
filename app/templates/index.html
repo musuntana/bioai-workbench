@@ -30,6 +30,8 @@
     #results-table th, #results-table td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid #8884; white-space: nowrap; }
     #results-table th { font-weight: 700; }
     #results-table tbody tr.significant-row { background: #d9485f14; }
+    #results-export-link { display: inline-block; padding: .55rem .7rem; text-decoration: underline; }
+    #results-export-link[hidden] { display: none; }
     #volcano-plot, #ma-plot { display: block; width: 100%; height: auto; min-height: 260px; background: #8881; border-radius: 8px; }
     #volcano-plot text, #ma-plot text { fill: currentColor; font-size: 12px; }
     #volcano-plot .grid-line, #ma-plot .grid-line { stroke: currentColor; opacity: .13; }
@@ -211,6 +213,7 @@
       <button id="results-previous" type="button" disabled>Previous</button>
       <span id="results-page-summary" class="muted">No results loaded.</span>
       <button id="results-next" type="button" disabled>Next</button>
+      <a id="results-export-link" hidden>Download filtered CSV (all matching genes)</a>
     </div>
   </section>
 
@@ -496,6 +499,7 @@
     const resultsPageSummary = document.getElementById("results-page-summary");
     const resultsPrevious = document.getElementById("results-previous");
     const resultsNext = document.getElementById("results-next");
+    const resultsExportLink = document.getElementById("results-export-link");
     const volcanoPlot = document.getElementById("volcano-plot");
     const volcanoSummary = document.getElementById("volcano-summary");
     const maPlot = document.getElementById("ma-plot");
@@ -749,6 +753,12 @@
       if (requestToken !== activeResultsRequestToken || runId !== activeResultsRunId) return;
       if (!response.ok) throw new Error(payload.detail || "Could not load differential-expression results.");
       renderRunResults(payload);
+      const exportParams = new URLSearchParams(params);
+      exportParams.delete("limit");
+      exportParams.delete("offset");
+      resultsExportLink.href = "/api/v1/runs/" + encodeURIComponent(runId) +
+        "/results/export?" + exportParams.toString();
+      resultsExportLink.hidden = false;
     }
 
     document.getElementById("refresh-results").addEventListener("click", function () {
@@ -812,6 +822,8 @@
           }
         } else {
           resultsPanel.hidden = true;
+          resultsExportLink.hidden = true;
+          resultsExportLink.removeAttribute("href");
           activeResultsRunId = null;
           activeResultsRequestToken += 1;
         }
@@ -836,6 +848,8 @@
       activeResultsRunId = null;
       activeResultsRequestToken += 1;
       resultsTableBody.textContent = "";
+      resultsExportLink.hidden = true;
+      resultsExportLink.removeAttribute("href");
       volcanoPlot.textContent = "";
       refreshRun(runId, refreshToken).catch(showError);
     }

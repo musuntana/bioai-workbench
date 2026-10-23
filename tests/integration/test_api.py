@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -364,6 +366,71 @@ class WorkbenchApiTests(unittest.TestCase):
             self.assertEqual(tampered.status_code, 409)
             self.assertIn("checksum", tampered.json()["detail"].lower())
 
+    def test_export_filtered_results_downloads_all_matches_and_preserves_source_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_id = "b" * 32
+            manager, result_file = self._create_result_run(root, run_id)
+            with result_file.open("a", encoding="utf-8") as stream:
+                for index in range(125):
+                    stream.write(f"gene_extra_{index:03d},40,2.0,1,2,0.0010,0.0200\n")
+            write_artifact_manifest(
+                result_file.parent, run_id=run_id, workflow_id="deseq2-basic"
+            )
+            with patch("app.main.run_manager", manager):
+                downloaded = self.client.get(
+                    f"/api/v1/runs/{run_id}/results/export",
+                    params={
+                        "significant_only": "true",
+                        "padj_max": 0.05,
+                        "min_abs_log2fc": 1,
+                        "sort_by": "gene_id",
+                        "sort_order": "asc",
+                    },
+                )
+                empty = self.client.get(
+                    f"/api/v1/runs/{run_id}/results/export",
+                    params={"q": "does_not_exist"},
+                )
+
+            self.assertEqual(downloaded.status_code, 200)
+            self.assertIn("attachment;", downloaded.headers["content-disposition"])
+            self.assertIn("text/csv", downloaded.headers["content-type"])
+            self.assertEqual(downloaded.headers["cache-control"], "no-store")
+            rows = list(csv.reader(io.StringIO(downloaded.text)))
+            self.assertEqual(
+                rows[0],
+                ["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"],
+            )
+            self.assertEqual(len(rows), 128)  # header + 125 generated + 2 significant fixture genes
+            self.assertEqual(rows[1][0], "gene_a")
+            self.assertEqual(rows[2][0], "gene_b")
+            self.assertEqual(rows[-1][0], "gene_extra_124")
+            self.assertEqual(rows[-1][-1], "0.0200")
+            self.assertEqual(empty.status_code, 200)
+            self.assertEqual(len(list(csv.reader(io.StringIO(empty.text)))), 1)
+
+    def test_filtered_export_refuses_unfinished_or_tampered_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            run_id = "c" * 32
+            manager, result_file = self._create_result_run(root, run_id, status="running")
+            with patch("app.main.run_manager", manager):
+                not_ready = self.client.get(f"/api/v1/runs/{run_id}/results/export")
+                manager.store.update(run_id, status="succeeded")
+                result_file.write_text(
+                    result_file.read_text(encoding="utf-8") + "modified,1,1,1,1,0.1,0.1\n",
+                    encoding="utf-8",
+                )
+                tampered = self.client.get(f"/api/v1/runs/{run_id}/results/export")
+                invalid_filter = self.client.get(
+                    f"/api/v1/runs/{run_id}/results/export",
+                    params={"padj_max": 2, "sort_by": "external_path"},
+                )
+            self.assertEqual(not_ready.status_code, 409)
+            self.assertEqual(tampered.status_code, 409)
+            self.assertEqual(invalid_filter.status_code, 422)
+
     def test_results_endpoint_rejects_invalid_filters(self) -> None:
         response = self.client.get(
             "/api/v1/runs/" + "a" * 32 + "/results",
@@ -439,6 +506,7 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('/api/v1/inputs/validate', response.text)
         self.assertIn('id="results-panel"', response.text)
         self.assertIn('id="volcano-plot"', response.text)
+        self.assertIn('id="results-export-link"', response.text)
         self.assertIn('id="ma-plot"', response.text)
         self.assertIn("drawMAPlot(payload.ma_points, summary)", response.text)
         self.assertIn('/results?', response.text)
