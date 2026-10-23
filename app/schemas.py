@@ -95,6 +95,7 @@ class RunStatus(BaseModel):
     artifact_count: int = 0
     log_truncated: bool = False
     input_provenance: dict[str, dict[str, object]] = Field(default_factory=dict)
+    environment_provenance: dict[str, str] = Field(default_factory=dict)
 
 
 class RunList(BaseModel):

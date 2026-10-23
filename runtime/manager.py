@@ -18,6 +18,7 @@ from app.registry import get_workflow
 from app.schemas import RunRequest
 from artifacts.manifest import write_artifact_manifest
 from runtime.config import RuntimeConfig
+from runtime.environment import read_environment_versions
 from runtime.state import RunStore, utc_now
 
 EXPECTED_DESEQ2_OUTPUTS = (
@@ -65,6 +66,18 @@ class RunManager:
             if not workflow.entrypoint.is_file():
                 raise RuntimeError("The registered workflow entrypoint is missing.")
 
+            # Run a private script copy: the provenance hash must identify
+            # exactly the script bytes submitted to Rscript.
+            workflow_snapshot = tmp_dir / "workflow.R"
+            digest = hashlib.sha256()
+            with workflow.entrypoint.open("rb") as source, workflow_snapshot.open("xb") as target:
+                while chunk := source.read(1024 * 1024):
+                    target.write(chunk)
+                    digest.update(chunk)
+            workflow_hash = digest.hexdigest()
+            self.store.update(
+                run_id, environment_provenance={"workflow_sha256": workflow_hash}
+            )
             counts_path = self._resolve_input(request.counts_file)
             metadata_path = self._resolve_input(request.metadata_file)
             # Freeze the bytes consumed by R, not merely a mutable input filename.
@@ -87,7 +100,7 @@ class RunManager:
             rscript = self._find_rscript()
             command = [
                 rscript,
-                str(workflow.entrypoint),
+                str(workflow_snapshot),
                 "--counts",
                 str(snapshots["counts"]),
                 "--metadata",
@@ -158,6 +171,9 @@ class RunManager:
             manifest = write_artifact_manifest(
                 output_dir, run_id=run_id, workflow_id=request.workflow_id
             )
+            environment_versions = read_environment_versions(output_dir / "run_manifest.tsv")
+            environment_versions["workflow_sha256"] = workflow_hash
+            self.store.update(run_id, environment_provenance=environment_versions)
             self.store.update(
                 run_id,
                 status="succeeded",

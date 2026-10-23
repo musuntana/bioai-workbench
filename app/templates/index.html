@@ -142,6 +142,8 @@
   <section id="run-panel" class="panel" hidden>
     <h2>Run status</h2>
     <p id="run-summary" role="status">Submitting…</p>
+    <h3>Runtime provenance</h3>
+    <pre id="run-environment">Not recorded yet.</pre>
     <h3>Artifacts</h3>
     <ul id="artifact-list"></ul>
     <h3>Logs</h3>
@@ -253,6 +255,13 @@
             " → " + JSON.stringify(change.run_b));
         }
         if (!payload.changed_parameters.length) lines.push("  None recorded.");
+        lines.push("Environment and workflow identity:");
+        for (const item of payload.environment) {
+          lines.push("  " + item.field + ": " + (item.run_a ?? "unknown") +
+            " → " + (item.run_b ?? "unknown") +
+            " (" + (item.same === null ? "unknown" : item.same ? "same" : "different") + ")");
+        }
+        if (!payload.environment.length) lines.push("  No version metadata recorded.");
         lines.push("Input content comparison:");
         for (const role of ["counts", "metadata"]) {
           const item = payload.inputs[role];
@@ -820,6 +829,10 @@
         runLog.textContent = payload.text || "Waiting for workflow output…";
       }
       const status = await statusResponse.json();
+      const versions = status.environment_provenance || {};
+      document.getElementById("run-environment").textContent = Object.keys(versions).length
+        ? Object.keys(versions).sort().map(key => key + ": " + versions[key]).join("\n")
+        : "Not recorded for this run.";
       runSummary.textContent = "Run " + status.run_id + " · " + status.status +
         (status.error_message ? " · " + status.error_message : "");
       if (["succeeded", "failed", "timed_out"].includes(status.status)) {

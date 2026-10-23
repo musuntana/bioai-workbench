@@ -42,6 +42,7 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
             "parameters": record.get("parameters") or {},
             "artifact_hashes": hashes,
             "input_provenance": record.get("input_provenance") or {},
+            "environment_provenance": record.get("environment_provenance") or {},
         })
 
     first, second = runs
@@ -74,8 +75,19 @@ def compare_runs(manager: Any, run_a: str, run_b: str) -> dict[str, Any]:
         }
         for path in sorted(set(hashes_a) | set(hashes_b))
     ]
+    env_a, env_b = first["environment_provenance"], second["environment_provenance"]
+    environment_comparison = [
+        {
+            "field": key,
+            "run_a": env_a.get(key),
+            "run_b": env_b.get(key),
+            "same": env_a[key] == env_b[key] if key in env_a and key in env_b else None,
+        }
+        for key in sorted(set(env_a) | set(env_b))
+    ]
     return {
         "runs": runs,
+        "environment": environment_comparison,
         "same_workflow": first["workflow_id"] == second["workflow_id"],
         "changed_parameters": changed_parameters,
         "inputs": input_comparison,
