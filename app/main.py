@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Iterator
 import hashlib
 import hmac
 import io
@@ -11,6 +10,7 @@ import math
 import os
 import re
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal
 
