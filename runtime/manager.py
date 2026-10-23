@@ -122,7 +122,7 @@ class RunManager:
             if missing_outputs:
                 with log_path.open("ab") as stream:
                     stream.write(
-                        ("\\nMissing expected workflow outputs: " + ", ".join(missing_outputs) + "\\n").encode()
+                        ("\nMissing expected workflow outputs: " + ", ".join(missing_outputs) + "\n").encode()
                     )
                 self.store.update(
                     run_id,
@@ -149,7 +149,7 @@ class RunManager:
             # Keep public status messages generic; detailed paths are not copied into run metadata.
             safe_message = _public_error_message(exc)
             with log_path.open("ab") as stream:
-                stream.write((safe_message + "\\n").encode("utf-8", errors="replace"))
+                stream.write((safe_message + "\n").encode("utf-8", errors="replace"))
             self.store.update(
                 run_id,
                 status="failed",
