@@ -2,6 +2,8 @@
 
 This process is for deciding whether an existing script can contribute to BioAI Workbench. It is not a promise that any particular private script is safe to publish.
 
+Use the [legacy workflow review template](legacy-workflow-review-template.md) to record one decision per candidate without copying private source, real paths, identifiers, or data into this public repository.
+
 ## Decision states
 
 - **HOLD:** ownership, permission, data provenance, or license is unclear.
