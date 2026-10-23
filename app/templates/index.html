@@ -82,6 +82,11 @@
     <p class="muted">Select exactly two runs to compare saved parameters and output checksums.</p>
     <button id="compare-history" type="button">Compare selected runs</button>
     <pre id="comparison-summary" role="status" aria-live="polite">No comparison selected.</pre>
+    <label>Inspect one gene across selected runs
+      <input id="comparison-gene-id" maxlength="200" placeholder="Enter exact gene ID">
+    </label>
+    <button id="compare-single-gene" type="button">Compare gene</button>
+    <p id="single-gene-summary" class="muted" role="status" aria-live="polite"></p>
     <p id="gene-comparison-summary" class="muted" role="status" aria-live="polite"></p>
     <a id="gene-comparison-export" hidden download>Download DEG set comparison CSV</a>
   </section>
@@ -303,6 +308,27 @@
       } catch (error) {
         comparisonSummary.textContent = error.message;
       }
+    });
+    document.getElementById("compare-single-gene").addEventListener("click", async function () {
+      const target = document.getElementById("single-gene-summary");
+      const geneId = document.getElementById("comparison-gene-id").value.trim();
+      if (compareSelection.size !== 2 || !geneId) {
+        target.textContent = "Select two runs and enter an exact gene ID."; return;
+      }
+      const [runA, runB] = [...compareSelection];
+      const params = new URLSearchParams({run_a: runA, run_b: runB, gene_id: geneId});
+      target.textContent = "Comparing gene…";
+      try {
+        const response = await fetch("/api/v1/runs/compare/gene?" + params.toString());
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "Comparison unavailable.");
+        const describe = gene => gene ?
+          "log2FC " + formatResultValue("log2FoldChange", gene.log2FoldChange) +
+          ", padj " + formatResultValue("padj", gene.padj) +
+          ", " + (gene.significant ? "significant" : "not significant") : "not present";
+        target.textContent = geneId + " · A: " + describe(result.a) +
+          " · B: " + describe(result.b) + ". " + result.note;
+      } catch (error) { target.textContent = error.message; }
     });
     let activeRunId = null;
     let activeRefreshToken = 0;
