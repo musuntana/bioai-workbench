@@ -22,3 +22,4 @@ def test_expensive_deseq2_integration_requires_explicit_owner_opt_in() -> None:
     assert "github.event.comment.body == '/run-deseq2-integration'" in workflow
     assert "github.event.comment.user.login == github.repository_owner" in workflow
     assert "github.event_name != 'issue_comment'" in workflow
+    assert "format('comment-{0}', github.event.issue.number)" in workflow
