@@ -79,6 +79,8 @@
           <option value="succeeded">Succeeded</option>
           <option value="failed">Failed</option>
           <option value="timed_out">Timed out</option>
+          <option value="cancelling">Cancelling</option>
+          <option value="cancelled">Cancelled</option>
         </select>
       </label>
       <button id="refresh-history" type="button">Refresh history</button>
@@ -165,6 +167,7 @@
     <p id="run-summary" role="status">Submitting…</p>
     <div class="history-controls">
       <button id="rerun-run" type="button" hidden disabled>Re-run exact snapshot</button>
+      <button id="cancel-run" type="button" hidden disabled>Cancel current run</button>
       <p id="rerun-summary" class="muted" role="status" aria-live="polite"></p>
     </div>
     <h3>Runtime provenance</h3>
@@ -1048,10 +1051,13 @@
     });
 
     const rerunButton = document.getElementById("rerun-run");
+    const cancelRunButton = document.getElementById("cancel-run");
     const rerunSummary = document.getElementById("rerun-summary");
 
     function updateRerunControl(status) {
-      const terminal = ["succeeded", "failed", "timed_out"].includes(status.status);
+      const terminal = ["succeeded", "failed", "timed_out", "cancelled"].includes(status.status);
+      cancelRunButton.hidden = !["queued", "running"].includes(status.status);
+      cancelRunButton.disabled = cancelRunButton.hidden;
       const attempts = Number(status.attempt || 1);
       const inputProvenance = status.input_provenance || {};
       const environmentProvenance = status.environment_provenance || {};
@@ -1071,6 +1077,31 @@
         rerunSummary.textContent += " · maximum five attempts in this lineage reached.";
       }
     }
+
+    cancelRunButton.addEventListener("click", async function () {
+      const runId = activeRunId;
+      if (!runId || cancelRunButton.disabled) return;
+      if (!window.confirm("Cancel this workflow? Partial results will not be downloadable.")) return;
+      cancelRunButton.disabled = true;
+      try {
+        const response = await fetch(
+          "/api/v1/runs/" + encodeURIComponent(runId) + "/cancel",
+          { method: "POST" }
+        );
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.detail || "Cancellation not accepted.");
+        if (runId === activeRunId) {
+          runSummary.textContent = "Run " + runId + " · " + payload.status;
+          cancelRunButton.hidden = true;
+        }
+        await loadRunHistory();
+      } catch (error) {
+        if (runId === activeRunId) {
+          runSummary.textContent = "Cancellation unavailable: " + error.message;
+          cancelRunButton.disabled = false;
+        }
+      }
+    });
 
     rerunButton.addEventListener("click", async function () {
       const sourceRunId = activeRunId;
@@ -1113,7 +1144,7 @@
         : "Not recorded for this run.";
       runSummary.textContent = "Run " + status.run_id + " · " + status.status +
         (status.error_message ? " · " + status.error_message : "");
-      if (["succeeded", "failed", "timed_out"].includes(status.status)) {
+      if (["succeeded", "failed", "timed_out", "cancelled"].includes(status.status)) {
         if (artifactsResponse.ok) {
           const payload = await artifactsResponse.json();
           artifactList.textContent = "";
@@ -1160,6 +1191,8 @@
       runSummary.textContent = "Loading run " + runId + "…";
       rerunButton.hidden = true;
       rerunButton.disabled = true;
+      cancelRunButton.hidden = true;
+      cancelRunButton.disabled = true;
       rerunSummary.textContent = "";
       runLog.textContent = "Waiting for workflow output…";
       artifactList.textContent = "";
