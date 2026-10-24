@@ -31,6 +31,12 @@ def _setup_run(root: Path, run_id: str, *, status: str = "succeeded"):
         'gene_c,5,0.1,0.5,\n',
         encoding="utf-8",
     )
+    for name, content in (
+        ("differential_expression_significant.csv", "gene_id,baseMean,log2FoldChange,pvalue,padj\n"),
+        ("run_manifest.tsv", "key\tvalue\n"),
+        ("session_info.txt", "synthetic session info\n"),
+    ):
+        (outputs / name).write_text(content, encoding="utf-8")
     write_artifact_manifest(outputs, run_id=run_id, workflow_id="deseq2-basic")
     store.update(
         run_id, status=status, finished_at="2026-10-23T00:00:00+00:00",

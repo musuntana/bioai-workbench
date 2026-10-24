@@ -41,6 +41,12 @@ def test_results_focus_returns_exact_gene_and_missing_plot_coordinates() -> None
             "no_mean,,0.5,0.2,0.3\n",
             encoding="utf-8",
         )
+        for name, content in (
+            ("differential_expression_significant.csv", "gene_id,baseMean,log2FoldChange,pvalue,padj\n"),
+            ("run_manifest.tsv", "key\tvalue\n"),
+            ("session_info.txt", "synthetic session info\n"),
+        ):
+            (result_file.parent / name).write_text(content, encoding="utf-8")
         write_artifact_manifest(result_file.parent, run_id=run_id, workflow_id="deseq2-basic")
         store.update(run_id, status="succeeded")
 
