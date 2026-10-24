@@ -401,10 +401,10 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                         counts_valid = False
                     summary["gene_count"] = gene_count
                     if counts_valid:
-                        summary["library_sizes"] = dict(zip(counts_samples, library_totals))
+                        summary["library_sizes"] = dict(zip(counts_samples, library_totals, strict=True))
                         summary["all_zero_genes"] = all_zero_genes
                         zero_samples = [
-                            sample for sample, total in zip(counts_samples, library_totals)
+                            sample for sample, total in zip(counts_samples, library_totals, strict=True)
                             if total == 0
                         ]
                         summary["zero_library_samples"] = zero_samples
