@@ -206,3 +206,29 @@ def test_comparison_exports_escape_spreadsheet_formula_prefixes_and_html_injecti
         assert report.status_code == 200
         assert "<script>alert(1)</script>" not in report.text
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report.text
+
+
+def test_report_preview_has_exact_100_row_boundary_but_csv_is_complete():
+    """The HTML preview must not silently truncate the separately exported union."""
+    with TemporaryDirectory() as directory:
+        store = RunStore(Path(directory))
+        a, b = "3" * 32, "4" * 32
+        genes = "".join(f"g{i:03d},10,2,0.01,0.01\n" for i in range(125))
+        _make_run(store, a, genes)
+        _make_run(store, b, "g000,10,2,0.01,0.01\n")
+        with patch.object(run_manager, "store", store):
+            client = TestClient(app)
+            params = {"run_a": a, "run_b": b}
+            report = client.get("/api/v1/runs/compare/genes/report", params=params)
+            export = client.get(
+                "/api/v1/runs/compare/genes/export",
+                params={**params, "scope": "all"},
+            )
+        assert report.status_code == 200
+        assert "first 100 of\n 125 union genes" in report.text
+        assert "<td>g099</td>" in report.text
+        assert "<td>g100</td>" not in report.text
+        assert export.status_code == 200
+        rows = list(csv.DictReader(io.StringIO(export.text)))
+        assert len(rows) == 125
+        assert {row["gene_id"] for row in rows} == {f"g{i:03d}" for i in range(125)}
