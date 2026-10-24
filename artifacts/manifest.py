@@ -92,7 +92,7 @@ def load_artifact_manifest(
             actual_hash = _sha256(artifact_path)
         except (OSError, RuntimeError, ValueError) as exc:
             raise ArtifactManifestError(
-                "Artifact manifest references a missing or inconsistent file."
+                "Artifact checksum or file metadata mismatch; refusing to expose artifacts."
             ) from exc
         if not hmac.compare_digest(actual_hash, expected_hash):
             raise ArtifactManifestError("Artifact checksum mismatch; refusing to expose artifacts.")
