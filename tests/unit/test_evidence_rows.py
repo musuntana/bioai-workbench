@@ -95,5 +95,5 @@ def test_rejects_missing_required_csv_column() -> None:
 def test_rejects_non_finite_csv_statistic_instead_of_treating_it_as_missing() -> None:
     source, api = _fixture()
     source[1]["padj"] = "NaN"
-    with pytest.raises(EvidenceRowsError, match="non-finite DESeq2 statistic"):
+    with pytest.raises(EvidenceRowsError, match="Non-finite DESeq2 statistic"):
         verify_result_rows(source, api)
