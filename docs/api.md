@@ -108,6 +108,21 @@ curl -fOJ --get "http://127.0.0.1:8000/api/v1/runs/<run_id>/report" \
 
 A gene-list report includes every requested ID found in the verified results, even when it does not pass the display significance threshold; it reports missing IDs explicitly and scopes both plots to the selected genes. The run-wide total/significant counts remain run-level context. If no non-empty `gene_ids` is supplied, the report retains its run-wide behavior. Search and the UI's significant-only table toggle are not applied to the report; only the explicit gene list and the report significance thresholds are relevant. Lists are bounded to 4,000 characters, 100 unique IDs, and 200 characters per ID. Unfinished runs, invalid thresholds, oversized lists, and checksum mismatches are rejected. The report is HTML for offline viewing/printing, not a clinical interpretation.
 
+## Cross-run evidence report and full gene alignment
+
+Select two successful DESeq2 runs for a descriptive gene-ID comparison. The existing `GET /api/v1/runs/compare/genes` and its CSV export default to **significant genes in the shared tested universe**, with a 100-row JSON preview and full significant-set CSV.
+
+For a **full outer alignment** (all genes present in either run), use:
+
+```bash
+curl -fOJ "http://127.0.0.1:8000/api/v1/runs/compare/genes/export?run_a=<run_a>&run_b=<run_b>&scope=all&padj_max=0.05&min_abs_log2fc=1"
+curl -fOJ "http://127.0.0.1:8000/api/v1/runs/compare/genes/report?run_a=<run_a>&run_b=<run_b>&padj_max=0.05&min_abs_log2fc=1"
+```
+
+Both endpoints verify each run is complete, refuse malformed/duplicate gene IDs and rehash each DESeq2 result against its recorded manifest. The full CSV provides per-run `baseMean`, `log2FC`, `padj`, significance flags, run IDs, contrast/reference labels, input fingerprints, recorded result SHA-256 hashes and the exact comparison thresholds. The category distinguishes `both`, `only_a`, `only_b`, `neither_significant`, `only_a_tested`, and `only_b_tested`. **Absent genes are not treated as non-significant**. The offline HTML report contains a deterministic *first 100* gene-row preview, all-gene coverage counts, run-level parameters, input hashes and runtime/workflow versions, and an interpretation warning when contrasts or other evidence differ. Use `scope=all` CSV for the complete union; HTML is intentionally bounded.
+
+Differences in within-run significance do *not* constitute a statistical test for changes *between* runs. Changed contrast direction, input bytes, workflow alpha and runtime versions can invalidate straightforward comparisons. No HTML runs scripts; downloads use no-store/nosniff headers and the HTML report uses restrictive CSP. As with other endpoints, this is intended for localhost only and is not clinically validated.
+
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.
