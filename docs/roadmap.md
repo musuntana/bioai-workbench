@@ -49,6 +49,7 @@
 - [ ] Wrap the workflow in Snakemake after M1 is stable.
 - [ ] Record task state, exit status, logs, and artifact checksums.
 - [x] Add manual reruns from hash-verified immutable input/workflow snapshots, with parent lineage and a five-attempt family limit.
+- [x] Mark stale queued/running records failed during local runtime startup recovery; preserve terminal states and do not retry automatically.
 - [ ] Add bounded automatic retries and safe resume behavior where supported.
 - [ ] Verify that reruns do not silently reuse incompatible artifacts.
 

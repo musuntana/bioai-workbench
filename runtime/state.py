@@ -145,6 +145,51 @@ class RunStore:
             "offset": offset,
         }
 
+    def recover_interrupted_runs(self) -> list[str]:
+        """Mark queued/running records failed after a local runtime restart.
+
+        This store is deliberately single-process. A newly created runtime has no
+        worker handles for records left queued/running by a previous process, so
+        it must not present those records as active or silently resume them.
+        """
+        recovered: list[str] = []
+        now = utc_now()
+        with self._lock:
+            for run_dir in self.root.iterdir():
+                if (
+                    not run_dir.is_dir()
+                    or run_dir.is_symlink()
+                    or not _RUN_ID.fullmatch(run_dir.name)
+                ):
+                    continue
+                record_path = run_dir / "run.json"
+                if not record_path.is_file():
+                    continue
+                try:
+                    record = json.loads(record_path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if not isinstance(record, dict) or record.get("run_id") != run_dir.name:
+                    continue
+                if record.get("status") not in {"queued", "running"}:
+                    continue
+
+                record.update(
+                    {
+                        "status": "failed",
+                        "updated_at": now,
+                        "finished_at": now,
+                        "exit_code": None,
+                        "error_message": (
+                            "Run was interrupted by a runtime restart before completion. "
+                            "Inspect the run log and rerun only if verified snapshots are available."
+                        ),
+                    }
+                )
+                self._write(run_dir.name, record)
+                recovered.append(run_dir.name)
+        return recovered
+
     def count_runs_in_family(self, root_run_id: str) -> int:
         """Count valid records in one rerun lineage, including legacy root records."""
         if not _RUN_ID.fullmatch(root_run_id):
