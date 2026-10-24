@@ -311,6 +311,11 @@ class WorkbenchApiTests(unittest.TestCase):
             output_dir = manager.store.run_dir(run_id) / "outputs"
             artifact = output_dir / "differential_expression_all.csv"
             artifact.write_text("gene_id,log2FoldChange\nsynthetic_gene,1.2\n", encoding="utf-8")
+            (output_dir / "differential_expression_significant.csv").write_text(
+                "gene_id,log2FoldChange\n", encoding="utf-8"
+            )
+            (output_dir / "run_manifest.tsv").write_text("key\\tvalue\\n", encoding="utf-8")
+            (output_dir / "session_info.txt").write_text("synthetic session info\\n", encoding="utf-8")
             manifest = write_artifact_manifest(
                 output_dir, run_id=run_id, workflow_id="deseq2-basic"
             )

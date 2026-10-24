@@ -17,6 +17,7 @@ from typing import Any, Literal
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from artifacts.manifest import ArtifactManifestError
 
 from app.registry import list_workflows
 from app.schemas import (
