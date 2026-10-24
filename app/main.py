@@ -1014,29 +1014,84 @@ def get_run_results(
 @app.get("/api/v1/runs/{run_id}/report")
 def download_run_report(
     run_id: str,
+    gene_ids: str = Query(default="", max_length=4000),
     padj_max: float = Query(default=0.05, gt=0, le=1),
     min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
 ) -> Response:
-    """Download an offline HTML report without writing into immutable run outputs."""
+    """Download a run-wide report or an exact, bounded gene-list report."""
     from app.report import render_html_report
 
     if not re.fullmatch(r"[0-9a-f]{32}", run_id):
         raise HTTPException(status_code=404, detail="Run not found.")
+    try:
+        requested_ids = parse_gene_ids(gene_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    has_gene_list = bool(requested_ids)
     preview = get_run_results(
-        run_id=run_id, limit=20, offset=0, q="", significant_only=True,
-        focus_gene="", gene_ids="", padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
-        sort_by="padj", sort_order="asc",
+        run_id=run_id,
+        limit=100 if has_gene_list else 20,
+        offset=0,
+        q="",
+        significant_only=not has_gene_list,
+        focus_gene="",
+        gene_ids="\n".join(requested_ids),
+        padj_max=padj_max,
+        min_abs_log2fc=min_abs_log2fc,
+        sort_by="padj",
+        sort_order="asc",
     )
+    if has_gene_list:
+        # Report plots should describe the same selected genes as its table,
+        # not the full-run point sample returned by the interactive explorer.
+        rows = preview["rows"]
+        volcano_points = [
+            {
+                "gene_id": row["gene_id"],
+                "log2FoldChange": row.get("log2FoldChange"),
+                "padj": row.get("padj"),
+                "significant": row.get("significant", False),
+            }
+            for row in rows
+            if isinstance(row.get("log2FoldChange"), (int, float))
+            and isinstance(row.get("padj"), (int, float))
+        ]
+        ma_points = [
+            {
+                "gene_id": row["gene_id"],
+                "baseMean": row.get("baseMean"),
+                "log2FoldChange": row.get("log2FoldChange"),
+                "significant": row.get("significant", False),
+            }
+            for row in rows
+            if isinstance(row.get("baseMean"), (int, float))
+            and row["baseMean"] >= 0
+            and isinstance(row.get("log2FoldChange"), (int, float))
+        ]
+        preview["plot_points"] = volcano_points
+        preview["ma_points"] = ma_points
+        summary = preview["summary"]
+        summary["plot_eligible_genes"] = len(volcano_points)
+        summary["plot_points_returned"] = len(volcano_points)
+        summary["plot_points_truncated"] = False
+        summary["ma_eligible_genes"] = len(ma_points)
+        summary["ma_points_returned"] = len(ma_points)
+        summary["ma_points_truncated"] = False
+
     record = run_manager.store.get(run_id)
     artifacts = run_manager.get_artifacts(run_id)
     if record is None or artifacts is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     report = render_html_report(record, preview, artifacts)
+    report_kind = "gene_list_report" if has_gene_list else "report"
     return Response(
         content=report,
         media_type="text/html; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="deseq2_report_{run_id}.html"',
+            "Content-Disposition": (
+                f'attachment; filename="deseq2_{report_kind}_{run_id}.html"'
+            ),
             "X-Content-Type-Options": "nosniff",
             "Cache-Control": "no-store",
             "Content-Security-Policy": (

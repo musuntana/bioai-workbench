@@ -125,3 +125,43 @@ def test_report_download_link_is_available_in_results_ui():
     assert home.status_code == 200
     assert 'id="results-report-link"' in home.text
     assert '"/report?"' in home.text
+    assert 'gene_ids: reportGeneIds' in home.text
+    assert 'Download selected-gene report (HTML)' in home.text
+
+
+def test_gene_list_report_includes_only_exact_requested_genes_and_missing_id_summary():
+    with tempfile.TemporaryDirectory() as directory:
+        run_id = "d" * 32
+        store, _ = _setup_run(Path(directory), run_id)
+        with patch.object(run_manager, "store", store):
+            response = TestClient(app).get(
+                f"/api/v1/runs/{run_id}/report",
+                params={"gene_ids": "gene_c, gene_a, missing_gene"},
+            )
+
+    assert response.status_code == 200
+    assert "deseq2_gene_list_report_" + run_id + ".html" in response.headers["content-disposition"]
+    assert "<h2>Selected gene list</h2>" in response.text
+    assert "Requested IDs: <strong>3</strong>" in response.text
+    assert "Found in run: <strong>2</strong>" in response.text
+    assert "missing_gene" in response.text
+    assert "gene_a" in response.text
+    assert "gene_c" in response.text
+    assert "gene_b" not in response.text
+    assert '<title>&lt;img src=x onerror=alert(2)&gt;</title>' not in response.text
+    assert 'aria-label="volcano plot, 1 sampled genes"' in response.text
+    assert 'aria-label="ma plot, 2 sampled genes"' in response.text
+    assert "Top significant genes" not in response.text
+
+
+def test_gene_list_report_rejects_more_than_one_hundred_unique_ids():
+    with tempfile.TemporaryDirectory() as directory:
+        run_id = "e" * 32
+        store, _ = _setup_run(Path(directory), run_id)
+        with patch.object(run_manager, "store", store):
+            response = TestClient(app).get(
+                f"/api/v1/runs/{run_id}/report",
+                params={"gene_ids": ",".join(f"gene_{index}" for index in range(101))},
+            )
+    assert response.status_code == 422
+    assert "at most 100 unique IDs" in response.json()["detail"]

@@ -239,7 +239,7 @@
       <span id="results-page-summary" class="muted">No results loaded.</span>
       <button id="results-next" type="button" disabled>Next</button>
       <a id="results-export-link" hidden>Download filtered CSV (all matching genes)</a>
-      <a id="results-report-link" hidden download>Download run-wide report (HTML; gene-list and search filters not applied)</a>
+      <a id="results-report-link" hidden download>Download run-wide report (HTML)</a>
     </div>
   </section>
 
@@ -924,12 +924,17 @@
       resultsExportLink.href = "/api/v1/runs/" + encodeURIComponent(runId) +
         "/results/export?" + exportParams.toString();
       resultsExportLink.hidden = false;
+      const reportGeneIds = params.get("gene_ids") || "";
       const reportParams = new URLSearchParams({
+        gene_ids: reportGeneIds,
         padj_max: params.get("padj_max"),
         min_abs_log2fc: params.get("min_abs_log2fc")
       });
       resultsReportLink.href = "/api/v1/runs/" + encodeURIComponent(runId) +
         "/report?" + reportParams.toString();
+      resultsReportLink.textContent = reportGeneIds.trim()
+        ? "Download selected-gene report (HTML)"
+        : "Download run-wide report (HTML)";
       resultsReportLink.hidden = false;
     }
 
