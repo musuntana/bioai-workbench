@@ -131,11 +131,37 @@ def render_html_report(
         for item in sorted(artifacts, key=lambda entry: str(entry.get("path", "")))
         if isinstance(item, dict)
     ]
+    gene_filter = results.get("gene_filter") or {}
+    is_gene_list_report = gene_filter.get("requested", 0) > 0
     gene_rows = [
         (row.get("gene_id"), _number(row.get("baseMean")),
          _number(row.get("log2FoldChange")), _number(row.get("padj")))
         for row in results["rows"]
     ]
+    missing_gene_rows = [(gene_id,) for gene_id in gene_filter.get("missing", [])]
+    gene_filter_section = ""
+    if is_gene_list_report:
+        gene_filter_section = (
+            "<h2>Gene list filter</h2>"
+            "<p>Matching uses case-sensitive exact gene IDs. The table and plots below "
+            "contain only requested IDs found in this run; rows are included regardless "
+            "of the display significance threshold.</p>"
+            "<div class=\"stats\">"
+            f"<span>Requested IDs: <strong>{_html(gene_filter.get('requested', 0))}</strong></span>"
+            f"<span>Found in run: <strong>{_html(gene_filter.get('found', 0))}</strong></span>"
+            f"<span>Missing IDs: <strong>{_html(len(missing_gene_rows))}</strong></span>"
+            "</div>"
+            "<h3>IDs not found</h3>"
+            f"{_table(('Missing gene ID',), missing_gene_rows)}"
+        )
+    gene_section_title = "Selected gene list" if is_gene_list_report else "Top significant genes"
+    gene_section_description = (
+        f"The table includes {len(gene_rows)} exact-match gene(s) found from the requested list. "
+        "All matched rows are included, including non-significant rows; missing IDs are listed above."
+        if is_gene_list_report else
+        f"Up to {len(gene_rows)} genes ordered by adjusted p-value; use the full verified CSV export for all results."
+    )
+    report_title = "DESeq2 gene-list report" if is_gene_list_report else "DESeq2 analysis report"
 
     style = """
       body { font-family: system-ui, sans-serif; color: #202632; margin: auto;
@@ -156,10 +182,10 @@ def render_html_report(
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DESeq2 analysis report – {_html(run_id)}</title>
+<title>{_html(report_title)} – {_html(run_id)}</title>
 <style>{style}</style></head>
 <body>
-<h1>DESeq2 analysis report</h1>
+<h1>{_html(report_title)}</h1>
 <p class="muted">Run {_html(run_id)} · workflow {_html(record.get("workflow_id"))}
  · completed {_html(record.get("finished_at"))}</p>
 <p><strong>Interpretation boundary:</strong> This is an exploratory computational report,
@@ -170,9 +196,10 @@ not a biological or clinical conclusion. Verify the contrast and input metadata.
 <span>Significant: <strong>{summary["significant_genes"]}</strong></span>
 <span>Missing adjusted p-value: <strong>{summary["missing_padj_genes"]}</strong></span>
 </div>
-<p>Report significance rule: padj ≤ {_html(summary["padj_max"])}
+<p>These counts describe the full run, not just the selected gene list. Report significance rule: padj ≤ {_html(summary["padj_max"])}
  and |log2FC| ≥ {_html(summary["min_abs_log2fc"])}.
  This display rule may differ from the workflow's alpha-only significant CSV.</p>
+{gene_filter_section}
 <h2>Workflow parameters</h2>
 {_table(("Parameter", "Value"), parameter_rows)}
 <h2>Input provenance</h2>
@@ -188,9 +215,8 @@ not a biological or clinical conclusion. Verify the contrast and input metadata.
 <div class="figure">{_plot_svg(results["ma_points"], "ma")}
 <p class="muted">Showing {summary["ma_points_returned"]} of
  {summary["ma_eligible_genes"]} eligible points. Display y-axis capped at ±10.</p></div>
-<h2>Top significant genes</h2>
-<p class="muted">Up to {len(gene_rows)} genes ordered by adjusted p-value;
- use the full verified CSV export for all results.</p>
+<h2>{_html(gene_section_title)}</h2>
+<p class="muted">{_html(gene_section_description)}</p>
 {_table(("Gene ID", "baseMean", "log2FC", "padj"), gene_rows)}
 <h2>Output artifact inventory</h2>
 {_table(("Relative filename", "Bytes", "Recorded SHA-256"), artifact_rows)}
