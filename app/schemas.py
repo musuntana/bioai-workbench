@@ -80,7 +80,7 @@ class RunAccepted(BaseModel):
     attempt: int = Field(default=1, ge=1)
 
 
-RunState = Literal["queued", "running", "succeeded", "failed", "timed_out"]
+RunState = Literal["queued", "running", "cancelling", "cancelled", "succeeded", "failed", "timed_out"]
 
 
 class RunStatus(BaseModel):
