@@ -95,6 +95,8 @@
     <p id="single-gene-summary" class="muted" role="status" aria-live="polite"></p>
     <p id="gene-comparison-summary" class="muted" role="status" aria-live="polite"></p>
     <a id="gene-comparison-export" hidden download>Download DEG set comparison CSV</a>
+    <a id="gene-comparison-all-export" hidden download>Download all aligned genes CSV</a>
+    <a id="gene-comparison-report" hidden download>Download cross-run evidence report (HTML)</a>
   </section>
 
   <section class="panel">
@@ -302,9 +304,17 @@
         comparisonSummary.textContent = lines.join("\n");
         const geneSummary = document.getElementById("gene-comparison-summary");
         const geneExport = document.getElementById("gene-comparison-export");
+        const allGenesExport = document.getElementById("gene-comparison-all-export");
+        const comparisonReport = document.getElementById("gene-comparison-report");
         geneExport.hidden = true;
+        allGenesExport.hidden = true;
+        comparisonReport.hidden = true;
         geneSummary.textContent = "Comparing significant-gene sets…";
-        const geneQuery = new URLSearchParams({run_a: runA, run_b: runB});
+        const geneQuery = new URLSearchParams({
+          run_a: runA, run_b: runB,
+          padj_max: document.getElementById("result-padj-max").value || "0.05",
+          min_abs_log2fc: document.getElementById("result-min-abs-log2fc").value || "1"
+        });
         const geneResponse = await fetch("/api/v1/runs/compare/genes?" + geneQuery.toString());
         const genePayload = await geneResponse.json();
         if (!geneResponse.ok) throw new Error(genePayload.detail || "Gene comparison unavailable.");
@@ -313,9 +323,16 @@
           " · significant in both: " + counts.both_significant +
           " · only run A: " + counts.only_a_significant +
           " · only run B: " + counts.only_b_significant +
-          ". Comparison uses padj ≤ 0.05 and |log2FC| ≥ 1. " + genePayload.note;
+          ". Comparison uses padj ≤ " + geneQuery.get("padj_max") +
+          " and |log2FC| ≥ " + geneQuery.get("min_abs_log2fc") + ". " + genePayload.note;
         geneExport.href = "/api/v1/runs/compare/genes/export?" + geneQuery.toString();
         geneExport.hidden = false;
+        const allQuery = new URLSearchParams(geneQuery);
+        allQuery.set("scope", "all");
+        allGenesExport.href = "/api/v1/runs/compare/genes/export?" + allQuery.toString();
+        allGenesExport.hidden = false;
+        comparisonReport.href = "/api/v1/runs/compare/genes/report?" + geneQuery.toString();
+        comparisonReport.hidden = false;
       } catch (error) {
         comparisonSummary.textContent = error.message;
       }
