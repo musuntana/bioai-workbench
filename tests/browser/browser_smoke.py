@@ -20,6 +20,7 @@ from urllib.request import urlopen
 
 from playwright.sync_api import expect, sync_playwright
 
+from artifacts.manifest import write_artifact_manifest
 from runtime.state import RunStore
 
 COUNTS = (
@@ -113,7 +114,29 @@ def _seed_history(runs_dir: Path) -> str:
     for i in range(1, 23):
         run_id = f"{i:032x}"
         store.create(run_id, "deseq2-basic")
-        store.update(run_id, status="failed", finished_at="2026-10-24T00:00:00+00:00")
+        if i == 1:
+            # The cross-run evidence API requires two completed successful runs.
+            # Keep this known-good synthetic run on history page 2.
+            output_dir = store.run_dir(run_id) / "outputs"
+            (output_dir / "differential_expression_all.csv").write_text(
+                RESULT_HEADER + "gene_alpha,100,2,0.5,4,0.001,0.01\n"
+            )
+            (output_dir / "differential_expression_significant.csv").write_text(
+                RESULT_HEADER + "gene_alpha,100,2,0.5,4,0.001,0.01\n"
+            )
+            (output_dir / "run_manifest.tsv").write_text("key\tvalue\n")
+            (output_dir / "session_info.txt").write_text("synthetic browser seed\n")
+            manifest = write_artifact_manifest(
+                output_dir, run_id=run_id, workflow_id="deseq2-basic"
+            )
+            store.update(
+                run_id, status="succeeded", artifact_count=len(manifest["artifacts"]),
+                finished_at="2026-10-24T00:00:00+00:00",
+            )
+        else:
+            store.update(
+                run_id, status="failed", finished_at="2026-10-24T00:00:00+00:00"
+            )
     return f"{1:032x}"
 
 
