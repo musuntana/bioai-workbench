@@ -698,7 +698,13 @@ def export_compared_genes(
         )
 
     def safe_csv_value(value: Any) -> Any:
-        if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+        # Spreadsheet programs may ignore leading whitespace/control characters
+        # (including a BOM) when deciding whether a cell is a formula.
+        # Prefix before those characters, keeping the original gene ID intact
+        # after a literal apostrophe. Numeric result values remain numeric.
+        if isinstance(value, str) and value.lstrip("\ufeff\x00 \t\r\n\v\f").startswith(
+            ("=", "+", "-", "@")
+        ):
             return "'" + value
         return value
 
