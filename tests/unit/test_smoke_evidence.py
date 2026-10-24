@@ -24,10 +24,11 @@ def _make_bundle(tmp_path: Path) -> Path:
     source = tmp_path / "download-differential_expression_all.csv"
     with source.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")
-        writer.writerow(["gene_id", "baseMean", "log2FoldChange", "pvalue", "padj"])
+        writer.writerow(["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"])
         for index in range(1, 101):
             writer.writerow([
                 f"gene_{index:03}", "100", "2" if index == 1 else "0.1",
+                "0.6" if index == 1 else "0.1", "4" if index == 1 else "0.1",
                 "0.001" if index == 1 else "0.5",
                 "0.01" if index == 1 else "0.8",
             ])
