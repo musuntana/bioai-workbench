@@ -555,6 +555,9 @@ def _run_bounded_process(
                 if available > 0:
                     kept = chunk[:available]
                     log_stream.write(kept)
+                    # The status UI reads run.log before the child exits. Flush
+                    # Python's buffer so each bounded chunk is observable now.
+                    log_stream.flush()
                     bytes_written += len(kept)
                 if len(chunk) > max(available, 0):
                     log_truncated = True
