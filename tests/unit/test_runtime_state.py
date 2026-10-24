@@ -107,6 +107,33 @@ class RunStoreTests(unittest.TestCase):
                     max_family_attempts=2,
                 )
 
+    def test_recover_interrupted_runs_marks_only_queued_and_running_records_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = RunStore(Path(temp_dir))
+            queued_id = "e" * 32
+            running_id = "f" * 32
+            succeeded_id = "1" * 32
+            failed_id = "2" * 32
+            store.create(queued_id, "deseq2-basic")
+            store.create(running_id, "deseq2-basic")
+            store.create(succeeded_id, "deseq2-basic")
+            store.create(failed_id, "deseq2-basic")
+            store.update(running_id, status="running", started_at="2026-10-24T00:00:00+00:00")
+            store.update(succeeded_id, status="succeeded", finished_at="2026-10-24T00:01:00+00:00")
+            store.update(failed_id, status="failed", finished_at="2026-10-24T00:02:00+00:00")
+
+            recovered = store.recover_interrupted_runs()
+
+            self.assertEqual(set(recovered), {queued_id, running_id})
+            for run_id in (queued_id, running_id):
+                record = store.get(run_id)
+                self.assertEqual(record["status"], "failed")
+                self.assertIsNotNone(record["finished_at"])
+                self.assertIn("runtime restart", record["error_message"])
+            self.assertEqual(store.get(succeeded_id)["status"], "succeeded")
+            self.assertEqual(store.get(failed_id)["status"], "failed")
+            self.assertEqual(store.recover_interrupted_runs(), [])
+
     def test_invalid_run_id_and_unknown_state_fields_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             store = RunStore(Path(temp_dir))
