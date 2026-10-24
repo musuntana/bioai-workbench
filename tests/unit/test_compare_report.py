@@ -166,3 +166,43 @@ def test_comparison_report_ui_offers_html_and_full_union_export():
     assert 'id="gene-comparison-all-export"' in home.text
     assert '/compare/genes/report?' in home.text
     assert 'allQuery.set("scope", "all")' in home.text
+
+
+def test_comparison_exports_escape_spreadsheet_formula_prefixes_and_html_injection():
+    """Excel-style consumers must not evaluate formula IDs hidden behind whitespace/BOM."""
+    hostile = [
+        "\t=2+2", "  @SUM(1)", "\ufeff+3", "\r\n-4", "'=already_text",
+        "<script>alert(1)</script>",
+    ]
+    source = io.StringIO()
+    writer = csv.writer(source)
+    for gene in hostile:
+        writer.writerow((gene, 10, 2, 0.01, 0.01))
+    with TemporaryDirectory() as directory:
+        store = RunStore(Path(directory))
+        a, b = "1" * 32, "2" * 32
+        _make_run(store, a, source.getvalue())
+        _make_run(store, b, source.getvalue())
+        with patch.object(run_manager, "store", store):
+            client = TestClient(app)
+            route = "/api/v1/runs/compare/genes/export"
+            exports = [
+                client.get(route, params={"run_a": a, "run_b": b, "scope": scope})
+                for scope in ("all", "significant")
+            ]
+            report = client.get(
+                "/api/v1/runs/compare/genes/report", params={"run_a": a, "run_b": b}
+            )
+        for response in exports:
+            assert response.status_code == 200
+            exported_ids = {
+                entry["gene_id"]
+                for entry in csv.DictReader(io.StringIO(response.text))
+            }
+            assert exported_ids == {
+                "'\t=2+2", "'  @SUM(1)", "'\ufeff+3", "'\r\n-4",
+                "'=already_text", "<script>alert(1)</script>",
+            }
+        assert report.status_code == 200
+        assert "<script>alert(1)</script>" not in report.text
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in report.text
