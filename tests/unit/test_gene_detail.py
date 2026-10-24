@@ -59,3 +59,31 @@ def test_duplicate_genes_refused():
         _run(store, run_id, "gene_x,1,2,0.01,0.01\ngene_x,2,3,0.01,0.01\n")
         with patch.object(run_manager, "store", store):
             assert TestClient(app).get(f"/api/v1/runs/{run_id}/genes/gene_x").status_code == 409
+
+
+def test_gene_comparison_respects_active_significance_thresholds():
+    with tempfile.TemporaryDirectory() as directory:
+        store = RunStore(Path(directory))
+        a, b = "d" * 32, "e" * 32
+        _run(store, a, "gene_y,20,0.7,0.001,0.04\n")
+        _run(store, b, "gene_y,30,0.9,0.001,0.02\n")
+        with patch.object(run_manager, "store", store):
+            client = TestClient(app)
+            url = "/api/v1/runs/compare/gene"
+            params = {"run_a": a, "run_b": b, "gene_id": "gene_y"}
+            baseline = client.get(url, params=params)
+            assert baseline.status_code == 200
+            assert baseline.json()["a"]["significant"] is False
+            assert baseline.json()["b"]["significant"] is False
+            lower_cutoff = client.get(
+                url, params={**params, "padj_max": 0.05, "min_abs_log2fc": 0.5}
+            )
+            assert lower_cutoff.status_code == 200
+            assert lower_cutoff.json()["a"]["significant"] is True
+            assert lower_cutoff.json()["b"]["significant"] is True
+            stricter_padj = client.get(
+                url, params={**params, "padj_max": 0.03, "min_abs_log2fc": 0.5}
+            )
+            assert stricter_padj.status_code == 200
+            assert stricter_padj.json()["a"]["significant"] is False
+            assert stricter_padj.json()["b"]["significant"] is True
