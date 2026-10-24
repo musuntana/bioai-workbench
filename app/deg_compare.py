@@ -18,6 +18,7 @@ def compare_gene_sets(
     *,
     padj_max: float = 0.05,
     min_abs_log2fc: float = 1.0,
+    include_all: bool = False,
 ) -> dict[str, Any]:
     if not RUN_ID.fullmatch(run_a) or not RUN_ID.fullmatch(run_b):
         raise HTTPException(status_code=422, detail="Invalid run ID.")
@@ -55,6 +56,36 @@ def compare_gene_sets(
         for category, identifiers in categories.items()
         for gene in sorted(identifiers)
     ]
+    if include_all:
+        # The existing significant-set API intentionally excludes one-run-only genes.
+        # Opt-in export/report mode aligns the full union without changing that API.
+        entries = []
+        for gene in sorted(set(a) | set(b)):
+            left, right = a.get(gene), b.get(gene)
+            if left is None:
+                category = "only_b_tested"
+            elif right is None:
+                category = "only_a_tested"
+            elif left["significant"] and right["significant"]:
+                category = "both"
+            elif left["significant"]:
+                category = "only_a"
+            elif right["significant"]:
+                category = "only_b"
+            else:
+                category = "neither_significant"
+            entries.append({
+                "gene_id": gene,
+                "category": category,
+                "run_a_base_mean": left.get("baseMean") if left else None,
+                "run_b_base_mean": right.get("baseMean") if right else None,
+                "run_a_padj": left.get("padj") if left else None,
+                "run_b_padj": right.get("padj") if right else None,
+                "run_a_log2fc": left.get("log2FoldChange") if left else None,
+                "run_b_log2fc": right.get("log2FoldChange") if right else None,
+                "run_a_significant": left["significant"] if left else None,
+                "run_b_significant": right["significant"] if right else None,
+            })
     return {
         "run_a": run_a,
         "run_b": run_b,

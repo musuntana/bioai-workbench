@@ -543,13 +543,14 @@ def list_runs(
 
 
 def _compare_gene_sets(
-    run_a: str, run_b: str, padj_max: float, min_abs_log2fc: float
+    run_a: str, run_b: str, padj_max: float, min_abs_log2fc: float,
+    *, include_all: bool = False,
 ) -> dict[str, Any]:
     from app.deg_compare import compare_gene_sets
 
     return compare_gene_sets(
         run_a, run_b, _load_verified_result_rows,
-        padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
+        padj_max=padj_max, min_abs_log2fc=min_abs_log2fc, include_all=include_all,
     )
 
 
@@ -569,18 +570,82 @@ def compare_run_genes(
     return result
 
 
+@app.get("/api/v1/runs/compare/genes/report")
+def download_gene_comparison_report(
+    run_a: str = Query(..., min_length=32, max_length=32),
+    run_b: str = Query(..., min_length=32, max_length=32),
+    padj_max: float = Query(default=0.05, gt=0, le=1),
+    min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+) -> Response:
+    """Create an offline descriptive comparison from two verified successful runs."""
+    from app.compare_report import render_gene_comparison_report
+
+    aligned = _compare_gene_sets(
+        run_a, run_b, padj_max, min_abs_log2fc, include_all=True
+    )
+    snapshots = compare_run_snapshots(run_a=run_a, run_b=run_b)
+    html = render_gene_comparison_report(aligned, snapshots)
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="deg_cross_run_report.html"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": (
+                "default-src 'none'; style-src 'unsafe-inline'; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            ),
+        },
+    )
+
+
 @app.get("/api/v1/runs/compare/genes/export")
 def export_compared_genes(
     run_a: str = Query(..., min_length=32, max_length=32),
     run_b: str = Query(..., min_length=32, max_length=32),
     padj_max: float = Query(default=0.05, gt=0, le=1),
     min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
+    scope: Literal["significant", "all"] = "significant",
 ) -> StreamingResponse:
-    result = _compare_gene_sets(run_a, run_b, padj_max, min_abs_log2fc)
+    """Keep the legacy significant-set CSV, or export full-union aligned evidence."""
+    include_all = scope == "all"
+    result = _compare_gene_sets(
+        run_a, run_b, padj_max, min_abs_log2fc, include_all=include_all
+    )
     columns = (
         "gene_id", "category", "run_a_padj", "run_b_padj",
         "run_a_log2fc", "run_b_log2fc",
     )
+    metadata: dict[str, Any] = {}
+    if include_all:
+        snapshot = compare_run_snapshots(run_a=run_a, run_b=run_b)
+        left, right = snapshot["runs"]
+        metadata = {
+            "run_a_id": run_a, "run_b_id": run_b,
+            "padj_max": padj_max, "min_abs_log2fc": min_abs_log2fc,
+            "run_a_reference": left["parameters"].get("reference"),
+            "run_b_reference": right["parameters"].get("reference"),
+            "run_a_contrast": left["parameters"].get("contrast"),
+            "run_b_contrast": right["parameters"].get("contrast"),
+            "run_a_counts_sha256": snapshot["inputs"]["counts"]["run_a_sha256"],
+            "run_b_counts_sha256": snapshot["inputs"]["counts"]["run_b_sha256"],
+            "run_a_metadata_sha256": snapshot["inputs"]["metadata"]["run_a_sha256"],
+            "run_b_metadata_sha256": snapshot["inputs"]["metadata"]["run_b_sha256"],
+            "run_a_result_sha256": left["artifact_hashes"].get("differential_expression_all.csv"),
+            "run_b_result_sha256": right["artifact_hashes"].get("differential_expression_all.csv"),
+        }
+        columns = (
+            *columns,
+            "run_a_base_mean", "run_b_base_mean",
+            "run_a_significant", "run_b_significant",
+            *metadata.keys(),
+        )
+
+    def safe_csv_value(value: Any) -> Any:
+        if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+            return "'" + value
+        return value
 
     def csv_lines() -> Iterator[str]:
         stream = io.StringIO()
@@ -590,18 +655,18 @@ def export_compared_genes(
         for gene in result["genes"]:
             stream.seek(0)
             stream.truncate(0)
-            # Protect spreadsheet applications from formula-like gene identifiers.
-            values = [
-                "'" + gene[key] if isinstance(gene[key], str)
-                and gene[key].startswith(("=", "+", "-", "@")) else gene[key]
-                for key in columns
-            ]
+            values = [safe_csv_value({**gene, **metadata}.get(key)) for key in columns]
             writer.writerow(values)
             yield stream.getvalue()
 
+    filename = "deg_all_gene_comparison.csv" if include_all else "deg_set_comparison.csv"
     return StreamingResponse(
         csv_lines(), media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": 'attachment; filename="deg_set_comparison.csv"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        },
     )
 
 
