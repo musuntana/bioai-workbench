@@ -6,7 +6,7 @@ Each run receives an opaque random ID and a file-backed state record at `runs/<r
 
 ## Environment dependencies
 
-Python runtime and development dependencies are resolved in the committed `uv.lock`. CI checks that the lock remains consistent with `pyproject.toml` and installs with `uv sync --locked --extra dev`; dependency changes must update both files. This does not yet pin the R/Bioconductor environment: a clean-environment DESeq2 run and recorded R/DESeq2 version pair remain required before claiming end-to-end reproducibility.
+Python runtime and development dependencies are resolved in the committed `uv.lock`. CI checks that the lock remains consistent with `pyproject.toml` and installs with `uv sync --locked --extra dev`; dependency changes must update both files. The manual end-to-end gate pins R 4.4.3, Bioconductor 3.20, and DESeq2 1.46.0, and fails if the installed DESeq2 version differs. The first clean-environment run using this pinned configuration passed on 2026-10-24; see the [durable verification record](verification/2026-10-24-deseq2-synthetic-e2e.md).
 
 ## Input and output provenance
 
@@ -20,6 +20,8 @@ Python runtime and development dependencies are resolved in the committed `uv.lo
 
 A successful API run requires exit code zero and all four expected DESeq2 outputs. Missing outputs convert the run to failure even if the child process exits zero. Failure logs are bounded by `BIOAI_MAX_LOG_BYTES`; runtime is bounded by `BIOAI_MAX_RUN_SECONDS`.
 
+The verified synthetic acceptance run checks the CLI's valid and invalid input paths, API result statistics and plots, gene details/comparisons, standalone report, artifact downloads and SHA-256 values, plus a rerun from immutable input/workflow snapshots. Its run URL, versions, checksums, and limitations are preserved in the [verification record](verification/2026-10-24-deseq2-synthetic-e2e.md); GitHub's downloadable evidence artifact has a 14-day retention window.
+
 ## Known limits
 
-The initial state store is local and single-process, not a distributed job queue. The R analysis is not fully hermetic: package installation and the host R library remain external prerequisites until a pinned environment is added. Reproducibility claims require a successful clean-environment integration run and a recorded R/DESeq2 version pair. Checksums prove byte identity, not scientific validity.
+The initial state store is local and single-process, not a distributed job queue. The R analysis is not fully hermetic: CI pins the R version, Bioconductor release, and DESeq2 version, and captures `session_info.txt`, but does not yet commit a lockfile for every transitive R package. The clean-environment synthetic integration gate has passed; any change to the pinned baseline or workflow should rerun it. Checksums prove byte identity, not scientific validity.
