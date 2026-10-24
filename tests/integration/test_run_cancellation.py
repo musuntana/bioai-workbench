@@ -30,7 +30,10 @@ def _new_manager(root: Path, *, slow_script: bool = False) -> tuple[RunManager, 
     executable = root / "Rscript"
     if slow_script:
         executable.write_text(
-            "#!/usr/bin/env python3\nimport time\n"
+            "#!/usr/bin/env python3\nimport pathlib, sys, time\n"
+            "args = sys.argv[1:]\n"
+            "outdir = pathlib.Path(args[args.index('--outdir') + 1])\n"
+            "(outdir / '.started').write_text('ready')\n"
             "print('started', flush=True)\ntime.sleep(15)\n",
             encoding="utf-8",
         )
@@ -67,9 +70,9 @@ def test_cancel_running_stops_child_and_does_not_publish_partial_artifacts(tmp_p
         with ThreadPoolExecutor(max_workers=2) as pool:
             worker = pool.submit(manager.execute, run_id, request.model_dump())
             deadline = time.monotonic() + 10
-            log_path = manager.store.run_dir(run_id) / "run.log"
+            started = manager.store.run_dir(run_id) / "outputs" / ".started"
             while time.monotonic() < deadline:
-                if log_path.exists() and b"started" in log_path.read_bytes():
+                if started.exists():
                     break
                 time.sleep(0.05)
             else:
@@ -83,6 +86,8 @@ def test_cancel_running_stops_child_and_does_not_publish_partial_artifacts(tmp_p
     assert finished["finished_at"] is not None
     assert finished["artifact_count"] == 0
     assert manager.get_artifacts(run_id) == []
+    # A deliberately incomplete output may remain on disk but is not advertised.
+    assert started.is_file()
     assert manager.cancel_run(run_id) == finished
     assert not (manager.store.run_dir(run_id) / "outputs" / "artifacts.json").exists()
 
