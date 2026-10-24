@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -244,6 +245,50 @@ class WorkbenchApiTests(unittest.TestCase):
         self.assertIn('id="refresh-history"', response.text)
         self.assertIn('id="rerun-run"', response.text)
         self.assertIn('/rerun', response.text)
+
+    def test_artifact_listing_rejects_malformed_or_mismatched_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager, _ = self._create_result_run(root, "a" * 32)
+            manifest_path = manager.store.run_dir("a" * 32) / "outputs" / "artifact_manifest.json"
+            original = manifest_path.read_text(encoding="utf-8")
+
+            with patch("app.main.run_manager", manager):
+                manifest_path.write_text("{broken", encoding="utf-8")
+                malformed = self.client.get("/api/v1/runs/" + "a" * 32 + "/artifacts")
+                manifest = json.loads(original)
+                manifest["run_id"] = "b" * 32
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                mismatched = self.client.get("/api/v1/runs/" + "a" * 32 + "/artifacts")
+
+            self.assertEqual(malformed.status_code, 409)
+            self.assertEqual(mismatched.status_code, 409)
+
+    def test_artifact_listing_rejects_missing_required_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager, _ = self._create_result_run(root, "b" * 32)
+            (manager.store.run_dir("b" * 32) / "outputs" / "session_info.txt").unlink()
+
+            with patch("app.main.run_manager", manager):
+                response = self.client.get("/api/v1/runs/" + "b" * 32 + "/artifacts")
+
+            self.assertEqual(response.status_code, 409)
+
+    def test_artifacts_are_not_exposed_before_run_succeeds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manager, _ = self._create_result_run(root, "c" * 32, status="running")
+
+            with patch("app.main.run_manager", manager):
+                listing = self.client.get("/api/v1/runs/" + "c" * 32 + "/artifacts")
+                download = self.client.get(
+                    "/api/v1/runs/" + "c" * 32 + "/artifacts/differential_expression_all.csv"
+                )
+
+            self.assertEqual(listing.status_code, 200)
+            self.assertEqual(listing.json()["artifacts"], [])
+            self.assertEqual(download.status_code, 404)
 
     def test_artifact_download_serves_only_manifested_files(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
