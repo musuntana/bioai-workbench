@@ -146,6 +146,8 @@
       <div class="wide">
         <p id="input-validation-summary" class="muted" role="status" aria-live="polite">Validate inputs before starting a run.</p>
         <ul id="input-validation-errors"></ul>
+        <ul id="input-validation-warnings" class="muted" aria-label="Input quality warnings"></ul>
+        <div id="input-library-qc" class="muted" hidden aria-label="Library-size quality indicators"></div>
         <button id="validate-inputs" type="button">Validate inputs</button>
         <button type="submit">Start workflow</button>
       </div>
@@ -1127,6 +1129,8 @@
 
     const validationSummary = document.getElementById("input-validation-summary");
     const validationErrors = document.getElementById("input-validation-errors");
+    const validationWarnings = document.getElementById("input-validation-warnings");
+    const libraryQc = document.getElementById("input-library-qc");
 
     function currentRunRequest() {
       const form = document.getElementById("run-form");
@@ -1138,8 +1142,45 @@
 
     function renderValidationResult(result) {
       validationErrors.textContent = "";
+      validationWarnings.textContent = "";
+      libraryQc.textContent = "";
+      const summary = result.summary;
+      const librarySizes = Object.entries(summary.library_sizes || {});
+      libraryQc.hidden = librarySizes.length === 0;
+      if (librarySizes.length) {
+        const heading = document.createElement("p");
+        heading.textContent = "Input depth indicators (raw counts; not DESeq2-normalized): " +
+          summary.all_zero_genes + " all-zero gene(s).";
+        libraryQc.appendChild(heading);
+        const sampleList = document.createElement("ul");
+        for (const [sample, total] of librarySizes) {
+          const item = document.createElement("li");
+          const sampleLabel = document.createElement("strong");
+          const sampleTotal = document.createElement("span");
+          sampleLabel.textContent = sample;
+          sampleTotal.textContent = " — " + Number(total).toLocaleString() + " counts";
+          item.appendChild(sampleLabel);
+          item.appendChild(sampleTotal);
+          sampleList.appendChild(item);
+        }
+        libraryQc.appendChild(sampleList);
+        if (summary.zero_library_samples && summary.zero_library_samples.length) {
+          const empty = document.createElement("p");
+          empty.textContent = "Empty libraries: " + summary.zero_library_samples.join(", ");
+          libraryQc.appendChild(empty);
+        } else if (summary.library_size_ratio !== null) {
+          const ratio = document.createElement("p");
+          ratio.textContent = "Largest/smallest raw-count library ratio: " +
+            Number(summary.library_size_ratio).toFixed(2) + "x.";
+          libraryQc.appendChild(ratio);
+        }
+      }
+      for (const warning of result.warnings || []) {
+        const item = document.createElement("li");
+        item.textContent = "QC note: " + warning.message;
+        validationWarnings.appendChild(item);
+      }
       if (result.valid) {
-        const summary = result.summary;
         const conditionCounts = Object.entries(summary.condition_counts || {})
           .map(([name, count]) => name + ": " + count).join(", ");
         validationSummary.textContent = "Inputs valid · " + summary.gene_count +
@@ -1159,6 +1200,9 @@
     async function validateCurrentInputs() {
       validationSummary.textContent = "Validating counts and metadata…";
       validationErrors.textContent = "";
+      validationWarnings.textContent = "";
+      libraryQc.textContent = "";
+      libraryQc.hidden = true;
       const response = await fetch("/api/v1/inputs/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
