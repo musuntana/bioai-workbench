@@ -65,7 +65,7 @@ curl "http://127.0.0.1:8000/api/v1/runs?limit=20&offset=0"
 curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
 ```
 
-The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter; selecting a record opens its current status, logs, and artifact checksums.
+The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter, 20-row previous/next page controls, and an explicit clear-selection action. Exactly two run IDs can be selected for comparison **across history pages**, with the selection visible until cleared; switching the status filter returns to page one without silently discarding chosen runs. Selecting a record opens its current status, logs, and artifact checksums.
 
 
 ## Rerun a workflow from the exact recorded inputs
