@@ -24,10 +24,11 @@ def _make_bundle(tmp_path: Path) -> Path:
     source = tmp_path / "download-differential_expression_all.csv"
     with source.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream, lineterminator="\n")
-        writer.writerow(["gene_id", "baseMean", "log2FoldChange", "pvalue", "padj"])
+        writer.writerow(["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"])
         for index in range(1, 101):
             writer.writerow([
                 f"gene_{index:03}", "100", "2" if index == 1 else "0.1",
+                "0.6" if index == 1 else "0.1", "4" if index == 1 else "0.1",
                 "0.001" if index == 1 else "0.5",
                 "0.01" if index == 1 else "0.8",
             ])
@@ -56,14 +57,33 @@ def _make_bundle(tmp_path: Path) -> Path:
     })
     _write_json(tmp_path / "results.json", {
         "run_id": original,
-        "rows": [{"gene_id": f"gene_{i:03}"} for i in range(1, 101)],
+        "rows": [
+            {"gene_id": f"gene_{i:03}", "baseMean": 100.0,
+             "log2FoldChange": 2.0 if i == 1 else 0.1,
+             "pvalue": 0.001 if i == 1 else 0.5,
+             "padj": 0.01 if i == 1 else 0.8,
+             "lfcSE": 0.6 if i == 1 else 0.1, "stat": 4.0 if i == 1 else 0.1,
+             "significant": i == 1}
+            for i in range(1, 101)
+        ],
         "summary": {
             "total_genes": 100, "significant_genes": 1,
             "missing_padj_genes": 0, "padj_max": 0.05,
             "min_abs_log2fc": 1,
+            "plot_eligible_genes": 100, "ma_eligible_genes": 100,
+            "plot_points_returned": 100, "ma_points_returned": 100,
+            "plot_points_truncated": False, "ma_points_truncated": False,
         },
-        "plot_points": [{"gene_id": "gene_001"}],
-        "ma_points": [{"gene_id": "gene_001"}],
+        "plot_points": [
+            {"gene_id": f"gene_{i:03}", "log2FoldChange": 2.0 if i == 1 else 0.1,
+             "padj": 0.01 if i == 1 else 0.8, "significant": i == 1}
+            for i in range(1, 101)
+        ],
+        "ma_points": [
+            {"gene_id": f"gene_{i:03}", "baseMean": 100.0,
+             "log2FoldChange": 2.0 if i == 1 else 0.1, "significant": i == 1}
+            for i in range(1, 101)
+        ],
     })
     gene = {
         "gene_id": "gene_001", "baseMean": 100,
