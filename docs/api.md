@@ -68,7 +68,17 @@ curl "http://127.0.0.1:8000/api/v1/runs?status=succeeded&limit=10"
 The response includes `runs`, `total` (after status filtering), `limit`, and `offset`. The maximum page size is 100. Valid status filters are `queued`, `running`, `succeeded`, `failed`, and `timed_out`. Invalid filters or pagination values return HTTP 422. Corrupt or incomplete on-disk run records are skipped rather than breaking the history response. The local UI includes the same history list and status filter, 20-row previous/next page controls, and an explicit clear-selection action. Exactly two run IDs can be selected for comparison **across history pages**, with the selection visible until cleared; switching the status filter returns to page one without silently discarding chosen runs. Selecting a record opens its current status, logs, and artifact checksums.
 
 
-## Rerun a workflow from the exact recorded inputs
+## Cancel a queued or active analysis
+
+```bash
+curl -X POST "http://127.0.0.1:8000/api/v1/runs/<run_id>/cancel"
+```
+
+Cancellation is explicit and idempotent. A queued run transitions to `cancelled` immediately without starting R. An active run transitions to `cancelling` while the current local worker stops its subprocess group; poll `GET /api/v1/runs/{run_id}` for the final `cancelled` status. Repeating cancellation in either state is safe. Successful/failed/timed-out runs return HTTP 409 without altering their results; unknown IDs return HTTP 404. The UI offers **Cancel current run** only when a queued or running task is selected, and asks for confirmation.
+
+No partially generated artifacts are downloadable from a cancelled run. If the runtime restarts while a task is cancelling, startup recovery records the incomplete task as `failed` rather than claiming cancellation completed. This feature is single-process only and is **not** a distributed task cancellation mechanism. To run again from verified snapshots, use the separate explicit rerun endpoint. An early cancellation may have no complete snapshots and cannot be rerun from that task.
+
+
 
 To repeat a completed run, call the rerun endpoint. It creates a new run ID and output directory while reusing the source run's immutable `counts.csv`, `metadata.csv`, and `workflow.R` snapshots only after verifying each SHA-256 against the source provenance.
 

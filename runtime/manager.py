@@ -29,7 +29,7 @@ EXPECTED_DESEQ2_OUTPUTS = (
     "session_info.txt",
 )
 MAX_RUN_FAMILY_ATTEMPTS = 5
-_TERMINAL_STATUSES = {"succeeded", "failed", "timed_out"}
+_TERMINAL_STATUSES = {"succeeded", "failed", "timed_out", "cancelled"}
 
 
 class RunManager:
@@ -45,6 +45,8 @@ class RunManager:
         # Mark them failed rather than exposing stale queued/running status forever.
         self.store.recover_interrupted_runs()
         self._slots = threading.BoundedSemaphore(self.config.max_concurrent_runs)
+        self._cancel_lock = threading.RLock()
+        self._cancel_events: dict[str, threading.Event] = {}
 
     def create_run(self, request: RunRequest) -> dict[str, Any]:
         if get_workflow(request.workflow_id) is None:
@@ -175,10 +177,12 @@ class RunManager:
         log_path = run_dir / "run.log"
         output_dir = run_dir / "outputs"
         tmp_dir = run_dir / "tmp"
-        if not self.store.claim_queued_run(run_id):
-            # Duplicate dispatches must never truncate the existing run log or
-            # overwrite immutable artifacts. A rerun requires its own run ID.
-            return
+        with self._cancel_lock:
+            if not self.store.claim_queued_run(run_id):
+                # Duplicate dispatches never overwrite already owned outputs.
+                return
+            cancel_event = threading.Event()
+            self._cancel_events[run_id] = cancel_event
 
         try:
             tmp_dir.mkdir(exist_ok=True)
@@ -270,6 +274,9 @@ class RunManager:
             environment = self._child_environment(tmp_dir)
 
             with self._slots:
+                if cancel_event.is_set():
+                    self._finish_run(run_id, cancel_event, status="cancelled")
+                    return
                 return_code, timed_out, log_truncated = _run_bounded_process(
                     command=command,
                     cwd=self.config.project_root,
@@ -277,11 +284,12 @@ class RunManager:
                     log_path=log_path,
                     timeout_seconds=self.config.max_run_seconds,
                     max_log_bytes=self.config.max_log_bytes,
+                    cancel_event=cancel_event,
                 )
 
             if timed_out:
-                self.store.update(
-                    run_id,
+                self._finish_run(
+                    run_id, cancel_event,
                     status="timed_out",
                     finished_at=utc_now(),
                     exit_code=return_code,
@@ -291,8 +299,8 @@ class RunManager:
                 return
 
             if return_code != 0:
-                self.store.update(
-                    run_id,
+                self._finish_run(
+                    run_id, cancel_event,
                     status="failed",
                     finished_at=utc_now(),
                     exit_code=return_code,
@@ -309,8 +317,8 @@ class RunManager:
                     stream.write(
                         ("\nMissing expected workflow outputs: " + ", ".join(missing_outputs) + "\n").encode()
                     )
-                self.store.update(
-                    run_id,
+                self._finish_run(
+                    run_id, cancel_event,
                     status="failed",
                     finished_at=utc_now(),
                     exit_code=1,
@@ -325,8 +333,8 @@ class RunManager:
             environment_versions = read_environment_versions(output_dir / "run_manifest.tsv")
             environment_versions["workflow_sha256"] = workflow_hash
             self.store.update(run_id, environment_provenance=environment_versions)
-            self.store.update(
-                run_id,
+            self._finish_run(
+                run_id, cancel_event,
                 status="succeeded",
                 finished_at=utc_now(),
                 exit_code=0,
@@ -338,13 +346,48 @@ class RunManager:
             safe_message = _public_error_message(exc)
             with log_path.open("ab") as stream:
                 stream.write((safe_message + "\n").encode("utf-8", errors="replace"))
-            self.store.update(
-                run_id,
+            self._finish_run(
+                run_id, cancel_event,
                 status="failed",
                 finished_at=utc_now(),
                 exit_code=None,
                 error_message=safe_message,
             )
+        finally:
+            with self._cancel_lock:
+                self._cancel_events.pop(run_id, None)
+
+    def _finish_run(
+        self, run_id: str, cancel_event: threading.Event, **changes: Any
+    ) -> None:
+        # Serialize finish vs cancel so a successful completion cannot overwrite
+        # a cancellation request, and a completed run cannot be cancelled later.
+        with self._cancel_lock:
+            if cancel_event.is_set():
+                self.store.update(
+                    run_id, status="cancelled", finished_at=utc_now(),
+                    exit_code=None, artifact_count=0,
+                    error_message="Run cancelled by user.",
+                    log_truncated=changes.get("log_truncated", False),
+                )
+            else:
+                self.store.update(run_id, **changes)
+
+    def cancel_run(self, run_id: str) -> dict[str, Any]:
+        """Request cancellation of a queued or owned active run, idempotently."""
+        with self._cancel_lock:
+            record = self.store.get(run_id)
+            if record is None:
+                raise FileNotFoundError("Run not found.")
+            if record["status"] == "running" and run_id not in self._cancel_events:
+                raise ValueError("The active worker is not owned by this runtime.")
+            result = self.store.request_cancel(run_id)
+            if result["status"] == "cancelling":
+                event = self._cancel_events.get(run_id)
+                if event is None:
+                    raise ValueError("The cancelling worker is not owned by this runtime.")
+                event.set()
+            return result
 
     def get_log(self, run_id: str) -> tuple[str, bool] | None:
         if self.store.get(run_id) is None:
@@ -464,6 +507,7 @@ def _run_bounded_process(
     log_path: Path,
     timeout_seconds: int,
     max_log_bytes: int,
+    cancel_event: threading.Event | None = None,
 ) -> tuple[int, bool, bool]:
     """Stream child output to a bounded log while enforcing a wall-clock timeout."""
     process = subprocess.Popen(
@@ -482,11 +526,15 @@ def _run_bounded_process(
     selector.register(process.stdout, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout_seconds
     timed_out = False
+    cancellation_sent = False
     log_truncated = False
     bytes_written = 0
 
     with log_path.open("wb") as log_stream:
         while process.poll() is None or selector.get_map():
+            if cancel_event is not None and cancel_event.is_set() and not cancellation_sent:
+                cancellation_sent = True
+                _stop_process(process)
             remaining = deadline - time.monotonic()
             if remaining <= 0 and not timed_out:
                 timed_out = True

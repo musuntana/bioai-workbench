@@ -53,6 +53,7 @@
 - [x] Add manual reruns from hash-verified immutable input/workflow snapshots, with parent lineage and a five-attempt family limit.
 - [x] Mark stale queued/running records failed during local runtime startup recovery; preserve terminal states and do not retry automatically.
 - [x] Claim queued tasks atomically within one local process before any log/snapshot/output writes; repeated execution of an active or terminal run is a no-op.
+- [x] Allow idempotent user-requested cancellation of queued/running tasks; kill the owned subprocess group and never advertise partial cancelled-run artifacts.
 - [ ] Add bounded automatic retries and safe resume behavior where supported.
 - [x] Verify reruns use hash-verified immutable snapshots; validate artifact manifests and reject missing, mismatched, or tampered outputs.
 
