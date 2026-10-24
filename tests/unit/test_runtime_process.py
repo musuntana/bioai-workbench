@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import threading
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from runtime.manager import _run_bounded_process
@@ -84,6 +87,53 @@ class BoundedProcessTests(unittest.TestCase):
             )
             self.assertTrue(timed_out)
             self.assertNotEqual(code, 0)
+
+
+    def test_running_child_log_is_visible_before_process_exits(self) -> None:
+        """Readers should see flushed output while analysis is still running."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            marker = root / "child-started.flag"
+            log_path = root / "run.log"
+            cancellation = threading.Event()
+            child_code = (
+                "import pathlib, time; "
+                "print('live-output-visible', flush=True); "
+                "pathlib.Path('child-started.flag').touch(); "
+                "time.sleep(10)"
+            )
+            with ThreadPoolExecutor(max_workers=1) as workers:
+                task = workers.submit(
+                    _run_bounded_process,
+                    command=[sys.executable, "-u", "-c", child_code],
+                    cwd=root,
+                    environment={"PATH": ""},
+                    log_path=log_path,
+                    timeout_seconds=15,
+                    max_log_bytes=512,
+                    cancel_event=cancellation,
+                )
+                try:
+                    started_by = time.monotonic() + 3
+                    while not marker.exists() and time.monotonic() < started_by:
+                        self.assertFalse(task.done(), "Child exited unexpectedly")
+                        time.sleep(0.02)
+                    self.assertTrue(marker.exists(), "Child never started")
+
+                    visible_by = time.monotonic() + 1
+                    while time.monotonic() < visible_by:
+                        if log_path.is_file() and b"live-output-visible" in log_path.read_bytes():
+                            break
+                        time.sleep(0.02)
+                    self.assertTrue(log_path.is_file())
+                    self.assertIn(b"live-output-visible", log_path.read_bytes())
+                    self.assertFalse(task.done(), "Log check must precede process exit")
+                finally:
+                    cancellation.set()
+                return_code, timed_out, truncated = task.result(timeout=5)
+                self.assertNotEqual(return_code, 0)
+                self.assertFalse(timed_out)
+                self.assertFalse(truncated)
 
 
 if __name__ == "__main__":
