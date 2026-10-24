@@ -62,7 +62,7 @@ def _make_bundle(tmp_path: Path) -> Path:
              "log2FoldChange": 2.0 if i == 1 else 0.1,
              "pvalue": 0.001 if i == 1 else 0.5,
              "padj": 0.01 if i == 1 else 0.8,
-             "lfcSE": 0.6, "stat": 4.0 if i == 1 else 0.1,
+             "lfcSE": 0.6 if i == 1 else 0.1, "stat": 4.0 if i == 1 else 0.1,
              "significant": i == 1}
             for i in range(1, 101)
         ],
