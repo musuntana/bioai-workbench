@@ -5,7 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from artifacts.manifest import (\n    MANIFEST_NAME, ArtifactManifestError, build_artifact_manifest,\n    load_artifact_manifest, write_artifact_manifest,\n)
+from artifacts.manifest import (
+    MANIFEST_NAME,
+    ArtifactManifestError,
+    build_artifact_manifest,
+    load_artifact_manifest,
+    write_artifact_manifest,
+)
 
 
 class ArtifactManifestTests(unittest.TestCase):
