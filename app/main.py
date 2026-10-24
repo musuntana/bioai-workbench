@@ -301,11 +301,16 @@ def preview_input_file(
 def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
     """Preflight counts and metadata contracts before spending time on a workflow run."""
     errors: list[dict[str, str]] = []
+    warnings: list[dict[str, str]] = []
     summary: dict[str, Any] = {
         "gene_count": 0,
         "sample_count": 0,
         "metadata_sample_count": 0,
         "condition_counts": {},
+        "library_sizes": {},
+        "all_zero_genes": None,
+        "zero_library_samples": [],
+        "library_size_ratio": None,
     }
     counts_path = _resolve_validation_input(request.counts_file, "counts_file", errors)
     metadata_path = _resolve_validation_input(request.metadata_file, "metadata_file", errors)
@@ -341,6 +346,8 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                     summary["sample_count"] = len(counts_samples)
                     seen_genes: set[str] = set()
                     counts_valid = True
+                    library_totals = [0] * len(counts_samples)
+                    all_zero_genes = 0
                     for row_number, row in enumerate(reader, start=2):
                         if not row:
                             continue
@@ -360,6 +367,7 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                             counts_valid = False
                             break
                         seen_genes.add(gene_id)
+                        row_counts: list[int] = []
                         for value in row[1:]:
                             try:
                                 count = float(value)
@@ -377,8 +385,13 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                                 })
                                 counts_valid = False
                                 break
+                            row_counts.append(int(count))
                         if not counts_valid:
                             break
+                        for index, count in enumerate(row_counts):
+                            library_totals[index] += count
+                        if not any(row_counts):
+                            all_zero_genes += 1
                         gene_count += 1
                     if counts_valid and gene_count == 0:
                         errors.append({
@@ -387,6 +400,34 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                         })
                         counts_valid = False
                     summary["gene_count"] = gene_count
+                    if counts_valid:
+                        summary["library_sizes"] = dict(zip(counts_samples, library_totals))
+                        summary["all_zero_genes"] = all_zero_genes
+                        zero_samples = [
+                            sample for sample, total in zip(counts_samples, library_totals)
+                            if total == 0
+                        ]
+                        summary["zero_library_samples"] = zero_samples
+                        if zero_samples:
+                            errors.append({
+                                "field": "counts_file",
+                                "message": (
+                                    "One or more sample columns have zero total counts. "
+                                    "DESeq2 size-factor estimation cannot use empty libraries."
+                                ),
+                            })
+                        else:
+                            ratio = max(library_totals) / min(library_totals)
+                            summary["library_size_ratio"] = ratio
+                            if ratio >= 5:
+                                warnings.append({
+                                    "code": "LIBRARY_SIZE_IMBALANCE",
+                                    "message": (
+                                        "The largest sample library is at least 5x the smallest. "
+                                        "This is a descriptive screening heuristic, not a "
+                                        "DESeq2 quality threshold; investigate sequencing depth."
+                                    ),
+                                })
         except (UnicodeDecodeError, csv.Error, OSError):
             errors.append({
                 "field": "counts_file",
@@ -482,7 +523,7 @@ def validate_deseq2_inputs(request: RunRequest) -> dict[str, Any]:
                 "message": "At least two samples per condition are required.",
             })
 
-    return {"valid": not errors, "errors": errors, "summary": summary}
+    return {"valid": not errors, "errors": errors, "warnings": warnings, "summary": summary}
 
 
 @app.post("/api/v1/runs", response_model=RunAccepted, status_code=202)
