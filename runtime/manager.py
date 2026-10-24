@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from app.registry import get_workflow
 from app.schemas import RunRequest
-from artifacts.manifest import write_artifact_manifest
+from artifacts.manifest import ArtifactManifestError, load_artifact_manifest, write_artifact_manifest
 from runtime.config import RuntimeConfig
 from runtime.environment import read_environment_versions
 from runtime.state import RunStore, utc_now
@@ -355,15 +355,18 @@ class RunManager:
         )
 
     def get_artifacts(self, run_id: str) -> list[dict[str, Any]] | None:
-        if self.store.get(run_id) is None:
+        record = self.store.get(run_id)
+        if record is None:
             return None
-        manifest_path = self.store.run_dir(run_id) / "outputs" / "artifact_manifest.json"
-        if not manifest_path.is_file():
+        # Partial outputs from queued/running/failed runs are never advertised.
+        if record.get("status") != "succeeded":
             return []
-        import json
-
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return manifest.get("artifacts", [])
+        return load_artifact_manifest(
+            self.store.run_dir(run_id) / "outputs",
+            run_id=run_id,
+            workflow_id=record["workflow_id"],
+            required_paths=EXPECTED_DESEQ2_OUTPUTS,
+        )["artifacts"]
 
     def _resolve_input(self, relative_name: str) -> Path:
         root = self.config.input_root.resolve()

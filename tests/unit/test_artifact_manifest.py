@@ -95,6 +95,22 @@ class ArtifactManifestTests(unittest.TestCase):
                     output_dir, run_id="b" * 32, workflow_id="deseq2-basic"
                 )
 
+    def test_load_manifest_rejects_same_size_content_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir) / "outputs"
+            output_dir.mkdir()
+            artifact = output_dir / "result.csv"
+            artifact.write_text("synthetic result\\n", encoding="utf-8")
+            write_artifact_manifest(
+                output_dir, run_id="e" * 32, workflow_id="deseq2-basic"
+            )
+            artifact.write_bytes(b"x" * artifact.stat().st_size)
+
+            with self.assertRaises(ArtifactManifestError):
+                load_artifact_manifest(
+                    output_dir, run_id="e" * 32, workflow_id="deseq2-basic"
+                )
+
     def test_load_manifest_rejects_missing_artifact_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output_dir = Path(temp_dir) / "outputs"
