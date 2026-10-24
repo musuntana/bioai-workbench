@@ -101,8 +101,9 @@ def test_all_gene_export_aligns_union_and_records_provenance_without_formulas():
         assert by_gene["common"]["min_abs_log2fc"] == "1.0"
         assert by_gene["common"]["run_a_contrast"] == "treated"
         assert by_gene["common"]["run_b_contrast"] == "control"
-        assert "only_a" not in old_csv.text
-        assert list(csv.DictReader(io.StringIO(old_csv.text)))[0]["gene_id"] == "common"
+        legacy_entries = list(csv.DictReader(io.StringIO(old_csv.text)))
+        assert {row["gene_id"] for row in legacy_entries} == {"common", "switch"}
+        assert all(row["gene_id"] not in {"only_a", "only_b"} for row in legacy_entries)
 
         assert report.status_code == 200
         assert report.headers["cache-control"] == "no-store"
