@@ -109,6 +109,65 @@ def _make_bundle(tmp_path: Path) -> Path:
         "<svg><circle/></svg><svg><circle/></svg></html>",
         encoding="utf-8",
     )
+    # New report/export fixtures independently mirror the original R CSV values.
+    _write_json(tmp_path / "batch-results.json", {
+        "run_id": original,
+        "gene_filter": {
+            "requested": 3, "found": 2, "missing": ["missing_gene_xyz"],
+        },
+        "filtered_genes": 2,
+        "rows": [
+            {"gene_id": "gene_001", "baseMean": 100.0, "log2FoldChange": 2.0, "padj": 0.01},
+            {"gene_id": "gene_050", "baseMean": 100.0, "log2FoldChange": 0.1, "padj": 0.8},
+        ],
+    })
+    with (tmp_path / "batch-export.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["gene_id", "baseMean", "log2FoldChange", "lfcSE", "stat", "pvalue", "padj"])
+        writer.writerow(["gene_001", 100, 2, 0.6, 4, 0.001, 0.01])
+        writer.writerow(["gene_050", 100, 0.1, 0.1, 0.1, 0.5, 0.8])
+    (tmp_path / "batch-report.html").write_text(
+        f'<html><h1>DESeq2 gene-list report</h1>{original}{digest}'
+        '<p>Requested IDs: <strong>3</strong></p>'
+        '<p>Found in run: <strong>2</strong></p>'
+        '<td>gene_001</td><td>gene_050</td><td>missing_gene_xyz</td></html>',
+        encoding="utf-8",
+    )
+    with (tmp_path / "aligned-gene-comparison.csv").open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=[
+            "gene_id", "category", "run_a_base_mean", "run_b_base_mean",
+            "run_a_log2fc", "run_b_log2fc", "run_a_padj", "run_b_padj",
+            "run_a_significant", "run_b_significant",
+            "run_a_id", "run_b_id", "run_a_counts_sha256", "run_b_counts_sha256",
+            "run_a_metadata_sha256", "run_b_metadata_sha256",
+            "run_a_result_sha256", "run_b_result_sha256",
+            "padj_max", "min_abs_log2fc",
+        ])
+        writer.writeheader()
+        for index in range(1, 101):
+            significant = index == 1
+            writer.writerow({
+                "gene_id": f"gene_{index:03}", "category": "both" if significant else "neither_significant",
+                "run_a_base_mean": 100, "run_b_base_mean": 100,
+                "run_a_log2fc": 2 if significant else 0.1,
+                "run_b_log2fc": 2 if significant else 0.1,
+                "run_a_padj": 0.01 if significant else 0.8,
+                "run_b_padj": 0.01 if significant else 0.8,
+                "run_a_significant": significant, "run_b_significant": significant,
+                "run_a_id": original, "run_b_id": rerun,
+                "run_a_counts_sha256": "e" * 64, "run_b_counts_sha256": "e" * 64,
+                "run_a_metadata_sha256": "f" * 64, "run_b_metadata_sha256": "f" * 64,
+                "run_a_result_sha256": digest, "run_b_result_sha256": digest,
+                "padj_max": 0.05, "min_abs_log2fc": 1,
+            })
+    (tmp_path / "cross-run-report.html").write_text(
+        f'<html><h1>DESeq2 cross-run evidence report</h1>{original}{rerun}{digest}'
+        f'<p>Counts: {"e" * 64} {"f" * 64}</p>'
+        '<p>Both runs tested: 100</p>'
+        '<p>Changes in significance categories do not establish a statistically '
+        'significant between-run difference.</p></html>',
+        encoding="utf-8",
+    )
     return tmp_path
 
 
@@ -117,6 +176,7 @@ def test_valid_synthetic_evidence_bundle(tmp_path: Path) -> None:
     report = verify_bundle(bundle)
     assert report["status"] == "passed"
     assert report["checks"]["rerun_result_byte_equality"] == "passed"
+    assert report["checks"]["selected_gene_and_cross_run_evidence"] == "passed"
     assert report["metrics"]["total_genes"] == 100
     assert report["metrics"]["significant_genes_at_preview_threshold"] == 1
 
@@ -147,4 +207,34 @@ def test_detects_rerun_result_tampering(tmp_path: Path) -> None:
         "gene_id,baseMean\nforged,1\n", encoding="utf-8",
     )
     with pytest.raises(AcceptanceError, match="rerun DESeq2 CSV"):
+        verify_bundle(bundle)
+
+
+@pytest.mark.parametrize("target,change,expected", [
+    ("batch-results.json", lambda d: d["gene_filter"].update(found=3), "batch filter found"),
+    ("batch-results.json", lambda d: d["rows"][0].update(padj=0.5), "batch preview padj"),
+])
+def test_new_report_evidence_rejects_forged_api_results(tmp_path: Path, target, change, expected) -> None:
+    bundle = _make_bundle(tmp_path)
+    p = bundle / target
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    change(payload)
+    _write_json(p, payload)
+    with pytest.raises(AcceptanceError, match=expected):
+        verify_bundle(bundle)
+
+
+def test_new_report_evidence_rejects_tampered_full_union_csv(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    p = bundle / "aligned-gene-comparison.csv"
+    p.write_text(p.read_text(encoding="utf-8").replace("gene_050", "gene_forged"))
+    with pytest.raises(AcceptanceError, match="aligned gene IDs"):
+        verify_bundle(bundle)
+
+
+def test_new_report_evidence_rejects_missing_provenance_in_html(tmp_path: Path) -> None:
+    bundle = _make_bundle(tmp_path)
+    p = bundle / "cross-run-report.html"
+    p.write_text(p.read_text(encoding="utf-8").replace("e" * 64, "0" * 64))
+    with pytest.raises(AcceptanceError, match="cross-run report counts input hash"):
         verify_bundle(bundle)

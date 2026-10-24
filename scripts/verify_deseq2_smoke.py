@@ -49,6 +49,131 @@ def _match_number(left: Any, right: Any) -> bool:
     )
 
 
+def _verify_report_evidence(
+    bundle: Path,
+    original: dict[str, Any],
+    rerun: dict[str, Any],
+    source: dict[str, dict[str, str]],
+    original_sha256: str,
+) -> None:
+    """Cross-check new user-facing report/export paths against actual DESeq2 CSV bytes."""
+    wanted = ("gene_001", "gene_050")
+    preview = _json(bundle, "batch-results.json")
+    _require(preview.get("run_id") == original["run_id"], "batch preview run mismatch")
+    gf = preview.get("gene_filter") or {}
+    _require(gf.get("requested") == 3, "batch filter requested count mismatch")
+    _require(gf.get("found") == 2, "batch filter found count mismatch")
+    _require(gf.get("missing") == ["missing_gene_xyz"], "batch filter missing IDs mismatch")
+    _require(preview.get("filtered_genes") == 2, "batch filter result count mismatch")
+    preview_rows = preview.get("rows") or []
+    _require(
+        sorted(row.get("gene_id") for row in preview_rows) == list(wanted),
+        "batch preview gene IDs mismatch",
+    )
+    for row in preview_rows:
+        ref = source[row["gene_id"]]
+        for column in ("baseMean", "log2FoldChange", "padj"):
+            _require(
+                _match_number(row.get(column), ref[column]),
+                f"batch preview {column} differs from verified DESeq2 CSV",
+            )
+
+    with (bundle / "batch-export.csv").open(encoding="utf-8-sig", newline="") as stream:
+        exported = list(csv.DictReader(stream))
+    _require(
+        sorted(row["gene_id"] for row in exported) == list(wanted),
+        "batch CSV exported different gene IDs than preview",
+    )
+    for row in exported:
+        for column in ("baseMean", "log2FoldChange", "padj"):
+            _require(
+                _match_number(row[column], source[row["gene_id"]][column]),
+                f"batch CSV {column} differs from verified DESeq2 CSV",
+            )
+
+    selected_report = (bundle / "batch-report.html").read_text(encoding="utf-8")
+    for evidence, explanation in (
+        ("DESeq2 gene-list report", "Selected-gene HTML report title missing"),
+        (original["run_id"], "Selected-gene report run ID mismatch"),
+        (original_sha256, "Selected-gene report result checksum missing"),
+        ("Requested IDs: <strong>3</strong>", "Selected-gene report requested count mismatch"),
+        ("Found in run: <strong>2</strong>", "Selected-gene report found count mismatch"),
+        ("<td>gene_001</td>", "Selected-gene report gene_001 missing"),
+        ("<td>gene_050</td>", "Selected-gene report gene_050 missing"),
+        ("<td>missing_gene_xyz</td>", "Selected-gene report missing-gene evidence missing"),
+    ):
+        _require(evidence in selected_report, explanation)
+    _require("<script" not in selected_report.lower(), "Selected-gene report contains executable script")
+
+    with (bundle / "aligned-gene-comparison.csv").open(
+        encoding="utf-8-sig", newline=""
+    ) as stream:
+        aligned_rows = list(csv.DictReader(stream))
+    _require(
+        sorted(row["gene_id"] for row in aligned_rows) == sorted(source),
+        "Full-union CSV aligned gene IDs differ from verified source",
+    )
+    for row in aligned_rows:
+        identifier = row["gene_id"]
+        expected = source[identifier]
+        for stem, expected_id, expected_status in (
+            ("a", original["run_id"], original),
+            ("b", rerun["run_id"], rerun),
+        ):
+            _require(row[f"run_{stem}_id"] == expected_id, "Full-union CSV run IDs mismatch")
+            for role in ("counts", "metadata"):
+                _require(
+                    row[f"run_{stem}_{role}_sha256"]
+                    == expected_status["input_provenance"][role]["sha256"],
+                    f"Full-union CSV {role} hash mismatch",
+                )
+            _require(
+                row[f"run_{stem}_result_sha256"] == original_sha256,
+                "Full-union CSV result checksum mismatch",
+            )
+            for column, source_col in (
+                ("base_mean", "baseMean"),
+                ("log2fc", "log2FoldChange"),
+                ("padj", "padj"),
+            ):
+                _require(
+                    _match_number(row[f"run_{stem}_{column}"], expected[source_col]),
+                    f"Full-union CSV {source_col} mismatch",
+                )
+        padj, lfc = _number(expected["padj"]), _number(expected["log2FoldChange"])
+        significant = padj is not None and lfc is not None and padj <= 0.05 and abs(lfc) >= 1
+        _require(
+            row["category"] == ("both" if significant else "neither_significant"),
+            "Full-union CSV significance membership mismatch",
+        )
+        _require(
+            row["run_a_significant"] == str(significant)
+            and row["run_b_significant"] == str(significant),
+            "Full-union CSV per-run significance mismatch",
+        )
+        _require(
+            _match_number(row["padj_max"], 0.05) and _match_number(row["min_abs_log2fc"], 1),
+            "Full-union CSV comparison thresholds mismatch",
+        )
+
+    comparison_report = (bundle / "cross-run-report.html").read_text(encoding="utf-8")
+    for evidence, explanation in (
+        ("DESeq2 cross-run evidence report", "Cross-run report title missing"),
+        (original["run_id"], "Cross-run report original ID missing"),
+        (rerun["run_id"], "Cross-run report rerun ID missing"),
+        (original_sha256, "Cross-run report result checksum missing"),
+        (f"Both runs tested: {len(source)}", "Cross-run report tested universe mismatch"),
+        ("Changes in significance categories", "Cross-run report interpretation warning missing"),
+    ):
+        _require(evidence in comparison_report, explanation)
+    for role in ("counts", "metadata"):
+        _require(
+            original["input_provenance"][role]["sha256"] in comparison_report,
+            f"cross-run report {role} input hash missing",
+        )
+    _require("<script" not in comparison_report.lower(), "Cross-run report contains executable script")
+
+
 def verify_bundle(bundle: Path) -> dict[str, Any]:
     """Check full data → API → report → immutable rerun → comparisons."""
     original = _json(bundle, "run-status.json")
@@ -166,6 +291,11 @@ def verify_bundle(bundle: Path) -> dict[str, Any]:
              and gene_sets["counts"]["only_b_significant"] == 0,
              "Snapshot rerun changed significant-gene membership")
 
+    _verify_report_evidence(
+        bundle, original, rerun, source,
+        all_artifacts["differential_expression_all.csv"]["sha256"],
+    )
+
     return {
         "status": "passed",
         "scope": "Real R/DESeq2 synthetic fixture API smoke; not biological or clinical validation",
@@ -180,6 +310,7 @@ def verify_bundle(bundle: Path) -> dict[str, Any]:
             "rerun_snapshots_and_environment": "passed",
             "rerun_result_byte_equality": "passed",
             "gene_and_gene_set_comparison": "passed",
+            "selected_gene_and_cross_run_evidence": "passed",
         },
         "metrics": {
             "total_genes": len(rows),
