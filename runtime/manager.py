@@ -41,6 +41,9 @@ class RunManager:
         self.config = config or RuntimeConfig.from_env()
         self.config.prepare()
         self.store = store or RunStore(self.config.runs_root)
+        # A new local runtime has no live worker handles for persisted in-flight runs.
+        # Mark them failed rather than exposing stale queued/running status forever.
+        self.store.recover_interrupted_runs()
         self._slots = threading.BoundedSemaphore(self.config.max_concurrent_runs)
 
     def create_run(self, request: RunRequest) -> dict[str, Any]:

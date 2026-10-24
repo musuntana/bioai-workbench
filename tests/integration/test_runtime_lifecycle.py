@@ -9,6 +9,7 @@ from unittest.mock import patch
 from app.schemas import RunRequest
 from runtime.config import PROJECT_ROOT, RuntimeConfig
 from runtime.manager import RunManager
+from runtime.state import RunStore
 
 OUTPUTS = (
     "differential_expression_all.csv",
@@ -79,6 +80,34 @@ class RuntimeLifecycleTests(unittest.TestCase):
             manager.execute(record["run_id"], request.model_dump())
 
         return manager, record["run_id"]
+
+    def test_manager_startup_recovers_queued_and_running_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_root = root / "inputs"
+            input_root.mkdir()
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=input_root,
+                runs_root=root / "runs",
+                max_run_seconds=5,
+                max_log_bytes=4096,
+                max_concurrent_runs=1,
+            )
+            config.prepare()
+            store = RunStore(config.runs_root)
+            queued_id = "3" * 32
+            running_id = "4" * 32
+            store.create(queued_id, "deseq2-basic")
+            store.create(running_id, "deseq2-basic")
+            store.update(running_id, status="running", started_at="2026-10-24T00:00:00+00:00")
+
+            manager = RunManager(config=config, store=store)
+
+            self.assertEqual(manager.store.get(queued_id)["status"], "failed")
+            self.assertEqual(manager.store.get(running_id)["status"], "failed")
+            self.assertIn("runtime restart", manager.store.get(queued_id)["error_message"])
+            self.assertIn("runtime restart", manager.store.get(running_id)["error_message"])
 
     def test_successful_workflow_persists_state_and_artifact_checksums(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
