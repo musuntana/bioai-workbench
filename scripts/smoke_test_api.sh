@@ -149,6 +149,19 @@ if ! grep -qi '^content-disposition: attachment;' "$TMP_BASE/report-headers.txt"
   exit 1
 fi
 
+# Exercise the same batch gene filtering and report export users see in the UI.
+# The third ID deliberately does not exist, so missing-gene handling is tested.
+curl -fsS -G "$BASE_URL/api/v1/runs/$RUN_ID/results" \
+  --data-urlencode 'limit=100' \
+  --data-urlencode 'gene_ids=gene_001,gene_050,missing_gene_xyz' \
+  -o "$TMP_BASE/batch-results.json"
+curl -fsS -G "$BASE_URL/api/v1/runs/$RUN_ID/results/export" \
+  --data-urlencode 'gene_ids=gene_001,gene_050,missing_gene_xyz' \
+  -o "$TMP_BASE/batch-export.csv"
+curl -fsS -G "$BASE_URL/api/v1/runs/$RUN_ID/report" \
+  --data-urlencode 'gene_ids=gene_001,gene_050,missing_gene_xyz' \
+  -o "$TMP_BASE/batch-report.html"
+
 curl -fsS -X POST "$BASE_URL/api/v1/runs/$RUN_ID/rerun" \
   -o "$TMP_BASE/rerun-accepted.json"
 RERUN_ID="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["run_id"])' "$TMP_BASE/rerun-accepted.json")"
@@ -182,6 +195,13 @@ curl -fsS "$BASE_URL/api/v1/runs/compare/gene?run_a=$RUN_ID&run_b=$RERUN_ID&gene
   -o "$TMP_BASE/gene-comparison.json"
 curl -fsS "$BASE_URL/api/v1/runs/compare/genes?run_a=$RUN_ID&run_b=$RERUN_ID" \
   -o "$TMP_BASE/gene-set-comparison.json"
+curl -fsS -G "$BASE_URL/api/v1/runs/compare/genes/export" \
+  --data-urlencode "run_a=$RUN_ID" --data-urlencode "run_b=$RERUN_ID" \
+  --data-urlencode 'scope=all' \
+  -o "$TMP_BASE/aligned-gene-comparison.csv"
+curl -fsS -G "$BASE_URL/api/v1/runs/compare/genes/report" \
+  --data-urlencode "run_a=$RUN_ID" --data-urlencode "run_b=$RERUN_ID" \
+  -o "$TMP_BASE/cross-run-report.html"
 
 # A standalone standard-library validator cross-checks downloaded DESeq2 CSVs,
 # live API summaries, SVG report contents and the real rerun's artifact hashes.
