@@ -64,7 +64,7 @@ This is **not** a hardened sandbox. It is designed for a single trusted local us
 
 ### 6. Artifacts and provenance — `artifacts/`
 
-The runtime records relative artifact paths, byte sizes, and SHA-256 checksums. The DESeq2 manifest also records tool versions, parameters, and input/output fingerprints. Raw input files are not copied into run directories, and absolute paths are omitted from run-state and artifact metadata.
+The runtime records relative artifact paths, byte sizes, and SHA-256 checksums. The DESeq2 manifest also records tool versions, parameters, and input/output fingerprints. Raw input bytes and the registered R entrypoint are frozen under each run's private `tmp/` snapshot directory for reproducible reruns; these snapshots are not published as output artifacts. Public run-state and artifact metadata omit absolute paths. The run directory itself still contains sensitive local input bytes and should be kept private.
 
 ### 7. Tests and quality gates
 
