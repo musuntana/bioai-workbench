@@ -85,7 +85,13 @@
     </div>
     <p id="history-summary" class="muted" role="status" aria-live="polite">Loading run history…</p>
     <ul id="history-list"></ul>
-    <p class="muted">Select exactly two runs to compare saved parameters and output checksums.</p>
+    <div class="history-controls">
+      <button id="history-previous" type="button" disabled>Previous 20</button>
+      <button id="history-next" type="button" disabled>Next 20</button>
+      <button id="history-clear-selection" type="button" disabled>Clear comparison selection</button>
+    </div>
+    <p id="history-selection-summary" class="muted" role="status" aria-live="polite">No runs selected for comparison.</p>
+    <p class="muted">Select two runs on any history pages to compare saved parameters and output checksums.</p>
     <button id="compare-history" type="button">Compare selected runs</button>
     <pre id="comparison-summary" role="status" aria-live="polite">No comparison selected.</pre>
     <label>Inspect one gene across selected runs
@@ -256,8 +262,38 @@
     const historyStatus = document.getElementById("history-status");
     const historySummary = document.getElementById("history-summary");
     const historyList = document.getElementById("history-list");
+    const historyPrevious = document.getElementById("history-previous");
+    const historyNext = document.getElementById("history-next");
+    const historyClearSelection = document.getElementById("history-clear-selection");
+    const historySelectionSummary = document.getElementById("history-selection-summary");
+    const historyPageSize = 20;
+    let historyOffset = 0;
+    let historyRequestToken = 0;
     const compareSelection = new Set();
     const comparisonSummary = document.getElementById("comparison-summary");
+
+    function updateHistorySelection() {
+      const chosen = [...compareSelection];
+      historySelectionSummary.textContent = chosen.length
+        ? "Selected (" + chosen.length + "/2): " + chosen.join(" · ")
+        : "No runs selected for comparison.";
+      historyClearSelection.disabled = chosen.length === 0;
+      // Never leave downloads pointing to a previous comparison after selection changes.
+      document.getElementById("gene-comparison-export").hidden = true;
+      document.getElementById("gene-comparison-all-export").hidden = true;
+      document.getElementById("gene-comparison-report").hidden = true;
+      document.getElementById("gene-comparison-summary").textContent = "";
+      document.getElementById("single-gene-summary").textContent = "";
+      comparisonSummary.textContent = "Select exactly two runs, then choose Compare selected runs.";
+    }
+
+    historyClearSelection.addEventListener("click", function () {
+      compareSelection.clear();
+      for (const checkbox of historyList.querySelectorAll('input[type="checkbox"]')) {
+        checkbox.checked = false;
+      }
+      updateHistorySelection();
+    });
     document.getElementById("compare-history").addEventListener("click", async function () {
       if (compareSelection.size !== 2) {
         comparisonSummary.textContent = "Select exactly two runs.";
@@ -392,21 +428,31 @@
     }
 
     async function loadRunHistory() {
+      const requestToken = ++historyRequestToken;
       historySummary.textContent = "Loading run history…";
       historyList.textContent = "";
-      const params = new URLSearchParams({ limit: "20", offset: "0" });
+      historyPrevious.disabled = true;
+      historyNext.disabled = true;
+      const params = new URLSearchParams({
+        limit: String(historyPageSize), offset: String(historyOffset)
+      });
       if (historyStatus.value) params.set("status", historyStatus.value);
       try {
         const response = await fetch("/api/v1/runs?" + params.toString());
         const payload = await response.json();
+        if (requestToken !== historyRequestToken) return;
         if (!response.ok) throw new Error(payload.detail || "Could not load run history.");
-        historySummary.textContent = payload.total
-          ? "Showing " + payload.runs.length + " of " + payload.total + " runs."
-          : "No runs found for this filter.";
-        const visibleIds = new Set(payload.runs.map(run => run.run_id));
-        for (const selected of compareSelection) {
-          if (!visibleIds.has(selected)) compareSelection.delete(selected);
+        if (payload.total > 0 && historyOffset >= payload.total) {
+          historyOffset = Math.floor((payload.total - 1) / historyPageSize) * historyPageSize;
+          await loadRunHistory();
+          return;
         }
+        historySummary.textContent = payload.total
+          ? "Showing " + (historyOffset + 1) + "–" +
+            (historyOffset + payload.runs.length) + " of " + payload.total + " runs."
+          : "No runs found for this filter.";
+        historyPrevious.disabled = historyOffset === 0;
+        historyNext.disabled = historyOffset + payload.runs.length >= payload.total;
         for (const run of payload.runs) {
           const item = document.createElement("li");
           const checkbox = document.createElement("input");
@@ -424,6 +470,7 @@
             } else {
               compareSelection.delete(run.run_id);
             }
+            updateHistorySelection();
           });
           item.appendChild(checkbox);
           const button = document.createElement("button");
@@ -439,9 +486,18 @@
           historyList.appendChild(item);
         }
       } catch (error) {
-        historySummary.textContent = error.message;
+        if (requestToken === historyRequestToken) historySummary.textContent = error.message;
       }
     }
+
+    historyPrevious.addEventListener("click", function () {
+      historyOffset = Math.max(0, historyOffset - historyPageSize);
+      loadRunHistory();
+    });
+    historyNext.addEventListener("click", function () {
+      historyOffset += historyPageSize;
+      loadRunHistory();
+    });
 
 
     const inputUpload = document.getElementById("input-upload-file");
@@ -1255,7 +1311,10 @@
     });
 
     document.getElementById("refresh-history").addEventListener("click", loadRunHistory);
-    historyStatus.addEventListener("change", loadRunHistory);
+    historyStatus.addEventListener("change", function () {
+      historyOffset = 0;
+      loadRunHistory();
+    });
     loadWorkflows();
     loadInputFiles();
     loadRunHistory();
