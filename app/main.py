@@ -18,6 +18,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from app.gene_lists import parse_gene_ids
 from app.registry import list_workflows
 from app.schemas import (
     ArtifactList,
@@ -821,12 +822,15 @@ def _filter_sort_result_rows(
     significant_only: bool,
     sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"],
     sort_order: Literal["asc", "desc"],
+    gene_ids: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     """Apply identical filtering and ordering to previews and CSV exports."""
     search_term = q.casefold().strip()
+    exact_gene_ids = set(gene_ids)
     filtered_rows = [
         row for row in rows
         if (not search_term or search_term in row["gene_id"].casefold())
+        and (not exact_gene_ids or row["gene_id"] in exact_gene_ids)
         and (not significant_only or row["significant"])
     ]
     if sort_by == "gene_id":
@@ -903,12 +907,17 @@ def get_run_results(
     q: str = Query(default="", max_length=200),
     significant_only: bool = False,
     focus_gene: str = Query(default="", max_length=200),
+    gene_ids: str = Query(default="", max_length=4000),
     padj_max: float = Query(default=0.05, gt=0, le=1),
     min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
     sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
     sort_order: Literal["asc", "desc"] = "asc",
 ) -> dict[str, Any]:
     """Return a paginated, filterable view of the verified DESeq2 result artifact."""
+    try:
+        requested_ids = parse_gene_ids(gene_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     columns, all_rows = _load_verified_result_rows(run_id, padj_max, min_abs_log2fc)
 
     focus_matches = [row for row in all_rows if focus_gene and row["gene_id"] == focus_gene]
@@ -961,8 +970,10 @@ def get_run_results(
 
     filtered_rows = _filter_sort_result_rows(
         all_rows, q=q, significant_only=significant_only, sort_by=sort_by,
-        sort_order=sort_order,
+        sort_order=sort_order, gene_ids=requested_ids,
     )
+    present_ids = {row["gene_id"] for row in all_rows}
+    missing_ids = [identifier for identifier in requested_ids if identifier not in present_ids]
 
     return {
         "run_id": run_id,
@@ -971,6 +982,11 @@ def get_run_results(
         "offset": offset,
         "limit": limit,
         "filtered_genes": len(filtered_rows),
+        "gene_filter": {
+            "requested": len(requested_ids),
+            "found": len(requested_ids) - len(missing_ids),
+            "missing": missing_ids,
+        },
         "summary": {
             "total_genes": len(all_rows),
             "significant_genes": len(significant_rows),
@@ -1008,7 +1024,7 @@ def download_run_report(
         raise HTTPException(status_code=404, detail="Run not found.")
     preview = get_run_results(
         run_id=run_id, limit=20, offset=0, q="", significant_only=True,
-        focus_gene="", padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
+        focus_gene="", gene_ids="", padj_max=padj_max, min_abs_log2fc=min_abs_log2fc,
         sort_by="padj", sort_order="asc",
     )
     record = run_manager.store.get(run_id)
@@ -1036,18 +1052,23 @@ def export_run_results(
     run_id: str,
     q: str = Query(default="", max_length=200),
     significant_only: bool = False,
+    gene_ids: str = Query(default="", max_length=4000),
     padj_max: float = Query(default=0.05, gt=0, le=1),
     min_abs_log2fc: float = Query(default=1.0, ge=0, le=1000),
     sort_by: Literal["padj", "log2FoldChange", "baseMean", "gene_id"] = "padj",
     sort_order: Literal["asc", "desc"] = "asc",
 ) -> StreamingResponse:
     """Export all matching genes, preserving the exact values of the verified source artifact."""
+    try:
+        requested_ids = parse_gene_ids(gene_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     columns, rows = _load_verified_result_rows(
         run_id, padj_max, min_abs_log2fc, preserve_raw=True
     )
     filtered = _filter_sort_result_rows(
         rows, q=q, significant_only=significant_only, sort_by=sort_by,
-        sort_order=sort_order,
+        sort_order=sort_order, gene_ids=requested_ids,
     )
 
     def iter_csv() -> Iterator[str]:

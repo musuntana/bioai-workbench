@@ -12,7 +12,8 @@
     .panel { border: 1px solid #8886; border-radius: 12px; padding: 1rem; margin: 1.25rem 0; }
     form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
     label { display: grid; gap: .35rem; font-size: .92rem; }
-    input, select { box-sizing: border-box; width: 100%; padding: .65rem; border: 1px solid #8888; border-radius: 7px; background: transparent; color: inherit; }
+    input, select, textarea { box-sizing: border-box; width: 100%; padding: .65rem; border: 1px solid #8888; border-radius: 7px; background: transparent; color: inherit; font: inherit; }
+    textarea { resize: vertical; }
     .wide { grid-column: 1 / -1; }
     button { cursor: pointer; padding: .7rem 1rem; border: 0; border-radius: 8px; font-weight: 650; }
     pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: .8rem; border-radius: 8px; background: #8881; }
@@ -23,6 +24,7 @@
     .history-run { width: 100%; text-align: left; border: 1px solid #8886; background: #8881; font-weight: 500; overflow-wrap: anywhere; }
     .result-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; align-items: end; }
     .result-controls label { display: grid; gap: .35rem; font-size: .9rem; min-width: 0; }
+    .result-controls .gene-list-control { grid-column: 1 / -1; }
     .result-controls .checkbox-control { display: flex; align-items: center; gap: .5rem; min-height: 2.5rem; }
     .result-controls .checkbox-control input { width: auto; }
     .result-table-wrap { width: 100%; overflow-x: auto; }
@@ -172,6 +174,9 @@
       <label>Search gene ID
         <input id="result-search" type="search" maxlength="200" placeholder="e.g. gene_001">
       </label>
+      <label class="gene-list-control">Exact gene list (optional; up to 100 unique IDs / 4000 characters; paste lines, commas or spaces)
+        <textarea id="result-gene-list" maxlength="4000" rows="3" placeholder="GeneA&#10;GeneB&#10;GeneC"></textarea>
+      </label>
       <label>Adjusted p-value threshold
         <input id="result-padj-max" type="number" min="0.000001" max="1" step="any" value="0.05">
       </label>
@@ -234,7 +239,7 @@
       <span id="results-page-summary" class="muted">No results loaded.</span>
       <button id="results-next" type="button" disabled>Next</button>
       <a id="results-export-link" hidden>Download filtered CSV (all matching genes)</a>
-      <a id="results-report-link" hidden download>Download reproducible report (HTML)</a>
+      <a id="results-report-link" hidden download>Download run-wide report (HTML; gene-list and search filters not applied)</a>
     </div>
   </section>
 
@@ -838,6 +843,16 @@
         " total genes · " + summary.significant_genes + " significant at padj ≤ " +
         summary.padj_max + " and |log2FC| ≥ " + summary.min_abs_log2fc +
         " · " + summary.missing_padj_genes + " missing adjusted p-value(s).";
+      if (payload.gene_filter && payload.gene_filter.requested > 0) {
+        const filter = payload.gene_filter;
+        resultsSummary.textContent += " · Exact list: " + filter.found + "/" +
+          filter.requested + " genes found in the run";
+        if (filter.missing.length) {
+          const preview = filter.missing.slice(0, 10).join(", ");
+          resultsSummary.textContent += " · Missing IDs: " + preview +
+            (filter.missing.length > 10 ? " (+" + (filter.missing.length - 10) + " more)" : "");
+        }
+      }
       resultsTableBody.textContent = "";
       const fields = [
         ["gene_id", "Gene ID"],
@@ -889,6 +904,7 @@
         limit: String(RESULT_PAGE_SIZE),
         offset: String(offset),
         q: document.getElementById("result-search").value,
+        gene_ids: document.getElementById("result-gene-list").value,
         significant_only: String(document.getElementById("result-significant-only").checked),
         focus_gene: focusedGeneId || "",
         padj_max: document.getElementById("result-padj-max").value || "0.05",
