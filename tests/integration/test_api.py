@@ -46,6 +46,12 @@ class WorkbenchApiTests(unittest.TestCase):
             "gene_f,5,-2.2,1.0,-2.2,,\n",
             encoding="utf-8",
         )
+        (output_dir / "differential_expression_significant.csv").write_text(
+            "gene_id,baseMean,log2FoldChange,lfcSE,stat,pvalue,padj\n",
+            encoding="utf-8",
+        )
+        (output_dir / "run_manifest.tsv").write_text("key\\tvalue\\n", encoding="utf-8")
+        (output_dir / "session_info.txt").write_text("synthetic session info\\n", encoding="utf-8")
         manifest = write_artifact_manifest(
             output_dir, run_id=run_id, workflow_id="deseq2-basic"
         )
@@ -308,7 +314,17 @@ class WorkbenchApiTests(unittest.TestCase):
             manifest = write_artifact_manifest(
                 output_dir, run_id=run_id, workflow_id="deseq2-basic"
             )
-            expected_hash = manifest["artifacts"][0]["sha256"]
+            expected_hash = next(
+                item["sha256"] for item in manifest["artifacts"]
+                if item["path"] == "differential_expression_all.csv"
+            )
+            manager.store.update(
+                run_id,
+                status="succeeded",
+                finished_at="2026-10-24T00:00:00+00:00",
+                exit_code=0,
+                artifact_count=len(manifest["artifacts"]),
+            )
 
             with patch("app.main.run_manager", manager):
                 response = self.client.get(
