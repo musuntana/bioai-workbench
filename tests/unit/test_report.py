@@ -125,6 +125,8 @@ def test_report_download_link_is_available_in_results_ui():
     assert home.status_code == 200
     assert 'id="results-report-link"' in home.text
     assert '"/report?"' in home.text
+    assert 'gene_ids: reportGeneIds' in home.text
+    assert 'Download selected-gene report (HTML)' in home.text
 
 
 def test_gene_list_report_includes_only_exact_requested_genes_and_missing_id_summary():
