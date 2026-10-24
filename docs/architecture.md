@@ -19,6 +19,9 @@ Registered workflow ID + validated parameters
 RunStore creates a queued run record
         |
         v
+RunStore atomically claims queued -> running (one in-process worker)
+        |
+        v
 RunManager checks input root and runtime limits
         |
         v
