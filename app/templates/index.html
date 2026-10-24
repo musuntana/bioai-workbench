@@ -322,7 +322,11 @@
         target.textContent = "Select two runs and enter an exact gene ID."; return;
       }
       const [runA, runB] = [...compareSelection];
-      const params = new URLSearchParams({run_a: runA, run_b: runB, gene_id: geneId});
+      const params = new URLSearchParams({
+        run_a: runA, run_b: runB, gene_id: geneId,
+        padj_max: document.getElementById("result-padj-max").value || "0.05",
+        min_abs_log2fc: document.getElementById("result-min-abs-log2fc").value || "1"
+      });
       target.textContent = "Comparing gene…";
       try {
         const response = await fetch("/api/v1/runs/compare/gene?" + params.toString());
@@ -592,6 +596,10 @@
           .map(field => field + ": " + formatResultValue(field, gene[field])).join(" · ") +
           " · " + (gene.significant ? "significant" : "not significant");
         focusedGeneId = geneId;
+        // Reuse the selected gene when comparing two history runs.
+        document.getElementById("comparison-gene-id").value = geneId;
+        document.getElementById("single-gene-summary").textContent =
+          "Gene " + geneId + " selected. Select two history runs and choose Compare gene.";
         document.getElementById("result-search").value = geneId;
         document.getElementById("result-significant-only").checked = false;
         await loadRunResults(runId, 0);
