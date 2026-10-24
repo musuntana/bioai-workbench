@@ -574,6 +574,20 @@ def rerun_run(run_id: str, background_tasks: BackgroundTasks) -> dict[str, Any]:
     }
 
 
+@app.post("/api/v1/runs/{run_id}/cancel", response_model=RunStatus)
+def cancel_run(run_id: str) -> dict[str, Any]:
+    """Cancel queued work or signal the active local worker to terminate."""
+    try:
+        return run_manager.cancel_run(run_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Run not found.") from exc
+    except ValueError as exc:
+        # Do not allow cancellation of terminal results or an unowned process.
+        if "Invalid run ID" in str(exc):
+            raise HTTPException(status_code=404, detail="Run not found.") from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @app.get("/api/v1/runs", response_model=RunList)
 def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
