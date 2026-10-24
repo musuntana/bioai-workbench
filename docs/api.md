@@ -95,6 +95,19 @@ curl -fOJ "http://127.0.0.1:8000/api/v1/runs/<run_id>/results/export?significant
 Use the same filters as the result preview (`q`, `significant_only`, `padj_max`, `min_abs_log2fc`, `sort_by`, `sort_order`), without `limit` or `offset`. Original CSV columns and their string values are preserved, including NA/empty statistics. A zero-match export contains only the CSV header. Original unfiltered results remain available via the artifact download endpoint.
 
 The export preserves gene identifiers exactly for scientific use. When opening untrusted CSV content in spreadsheet software, beware that spreadsheet applications may interpret cell values starting with formula characters as formulas; inspect imported data and disable formula evaluation when appropriate.
+## Download a run-wide or selected-gene HTML report
+
+The standalone report rechecks the successful run's result artifact against its SHA-256 manifest, records workflow parameters and provenance, and does not write into immutable run outputs. By default it summarizes the full run and lists up to 20 significant genes. To create a report for a pasted list, pass up to 100 unique exact gene IDs (case-sensitive); lines, commas, semicolons, or whitespace may separate IDs:
+
+```bash
+curl -fOJ --get "http://127.0.0.1:8000/api/v1/runs/<run_id>/report" \
+  --data-urlencode "gene_ids=GeneA,GeneB,MissingGene" \
+  --data-urlencode "padj_max=0.05" \
+  --data-urlencode "min_abs_log2fc=1"
+```
+
+A gene-list report includes every requested ID found in the verified results, even when it does not pass the display significance threshold; it reports missing IDs explicitly and scopes both plots to the selected genes. The run-wide total/significant counts remain run-level context. If no non-empty `gene_ids` is supplied, the report retains its run-wide behavior. Search and the UI's significant-only table toggle are not applied to the report; only the explicit gene list and the report significance thresholds are relevant. Lists are bounded to 4,000 characters, 100 unique IDs, and 200 characters per ID. Unfinished runs, invalid thresholds, oversized lists, and checksum mismatches are rejected. The report is HTML for offline viewing/printing, not a clinical interpretation.
+
 ## Local trust boundary
 
 The API currently has no authentication and the file-backed run store is single-process. Bind to localhost only. Do not use this service as a shared or public endpoint. The runtime does not claim to be a hardened sandbox.
