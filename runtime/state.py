@@ -95,6 +95,24 @@ class RunStore:
                 return None
             return json.loads(path.read_text(encoding="utf-8"))
 
+    def claim_queued_run(self, run_id: str) -> bool:
+        """Claim one queued run for this process; never reopen an active/terminal run.
+
+        The file store is deliberately single-process. The lock makes a duplicate
+        background-task dispatch harmless within the same runtime instance, not
+        a distributed lease or cross-process fencing mechanism.
+        """
+        with self._lock:
+            record = self.get(run_id)
+            if record is None:
+                raise FileNotFoundError("Run not found.")
+            if record["status"] != "queued":
+                return False
+            now = utc_now()
+            record.update(status="running", started_at=now, updated_at=now)
+            self._write(run_id, record)
+            return True
+
     def list_runs(
         self, *, limit: int = 20, offset: int = 0, status: str | None = None
     ) -> dict[str, Any]:

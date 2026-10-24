@@ -175,10 +175,13 @@ class RunManager:
         log_path = run_dir / "run.log"
         output_dir = run_dir / "outputs"
         tmp_dir = run_dir / "tmp"
-        tmp_dir.mkdir(exist_ok=True)
+        if not self.store.claim_queued_run(run_id):
+            # Duplicate dispatches must never truncate the existing run log or
+            # overwrite immutable artifacts. A rerun requires its own run ID.
+            return
 
-        self.store.update(run_id, status="running", started_at=utc_now())
         try:
+            tmp_dir.mkdir(exist_ok=True)
             request = RunRequest.model_validate(request_data)
             workflow = get_workflow(request.workflow_id)
             if workflow is None:

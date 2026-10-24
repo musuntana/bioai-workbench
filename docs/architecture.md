@@ -19,6 +19,9 @@ Registered workflow ID + validated parameters
 RunStore creates a queued run record
         |
         v
+RunStore atomically claims queued -> running (one in-process worker)
+        |
+        v
 RunManager checks input root and runtime limits
         |
         v
@@ -55,11 +58,13 @@ The deterministic planner maps a small set of task names to the registered DESeq
 
 The first runtime is local and file-backed. It creates opaque run IDs, atomically persists state, resolves relative input files under `BIOAI_INPUT_ROOT`, launches subprocesses without a shell, passes a restricted environment, enforces wall-clock and log-size limits, and checks expected output files.
 
+Before touching run logs, snapshots or outputs, an executor claims the queued record under the RunStore process lock. A second dispatch for an already running or terminal run exits without side effects. Exact-snapshot reruns create a new run ID, so this guard does not prevent intentional reruns. This is an **in-process safety boundary only**: it is not a filesystem lease, distributed queue, or fence for multiple Uvicorn workers. Do not share a runs directory between worker processes; add coordinated persistence/ownership before allowing multi-process execution.
+
 This is **not** a hardened sandbox. It is designed for a single trusted local user. Do not expose the unauthenticated API to untrusted networks. Use OS/container isolation before running untrusted workflows.
 
 ### 6. Artifacts and provenance — `artifacts/`
 
-The runtime records relative artifact paths, byte sizes, and SHA-256 checksums. The DESeq2 manifest also records tool versions, parameters, and input/output fingerprints. Raw input files are not copied into run directories, and absolute paths are omitted from run-state and artifact metadata.
+The runtime records relative artifact paths, byte sizes, and SHA-256 checksums. The DESeq2 manifest also records tool versions, parameters, and input/output fingerprints. Raw input bytes and the registered R entrypoint are frozen under each run's private `tmp/` snapshot directory for reproducible reruns; these snapshots are not published as output artifacts. Public run-state and artifact metadata omit absolute paths. The run directory itself still contains sensitive local input bytes and should be kept private.
 
 ### 7. Tests and quality gates
 

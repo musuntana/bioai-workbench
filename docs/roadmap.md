@@ -21,6 +21,8 @@
 
 **Status:** runtime verification passed on 2026-10-24 using the pinned R 4.4.3 / Bioconductor 3.20 / DESeq2 1.46.0 baseline. The [successful pinned GitHub Actions run](https://github.com/musuntana/bioai-workbench/actions/runs/40045705171) confirms the CLI's valid run and seven invalid-input cases; the API run verified four downloaded artifacts against manifest/response-header SHA-256 values, all eight acceptance categories, and byte-identical result CSVs across a rerun with matching input/workflow fingerprints. See the [durable verification record](verification/2026-10-24-deseq2-synthetic-e2e.md) and [evidence artifact](https://github.com/musuntana/bioai-workbench/actions/runs/40045705171/artifacts/12541506222), retained until 2026-11-07. This exit gate establishes software behavior on synthetic data only, not scientific or clinical validity.
 
+**Expanded report acceptance:** a second pinned real-R run at [#40060567106](https://github.com/musuntana/bioai-workbench/actions/runs/40060567106) passed the original eight categories plus cross-run and selected-gene evidence verification at commit `ea60cd2`. See the [nine-check evidence record](verification/2026-10-24-expanded-report-evidence.md). This does not establish browser E2E or real biological validation. Later Python-only enhancements require separate checks.
+
 ## M1.5 — Open-source product skeleton
 
 - [x] Add a `uv`-managed Python project and FastAPI API/UI.
@@ -50,6 +52,7 @@
 - [x] Record task state, exit status, logs, and artifact checksums.
 - [x] Add manual reruns from hash-verified immutable input/workflow snapshots, with parent lineage and a five-attempt family limit.
 - [x] Mark stale queued/running records failed during local runtime startup recovery; preserve terminal states and do not retry automatically.
+- [x] Claim queued tasks atomically within one local process before any log/snapshot/output writes; repeated execution of an active or terminal run is a no-op.
 - [ ] Add bounded automatic retries and safe resume behavior where supported.
 - [x] Verify reruns use hash-verified immutable snapshots; validate artifact manifests and reject missing, mismatched, or tampered outputs.
 

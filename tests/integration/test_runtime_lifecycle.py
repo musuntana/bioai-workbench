@@ -197,5 +197,64 @@ class RuntimeLifecycleTests(unittest.TestCase):
             self.assertIn("Missing expected workflow outputs", log)
 
 
+    def test_duplicate_execute_preserves_terminal_state_log_and_artifacts(self) -> None:
+        for creates_outputs in (True, False):
+            with self.subTest(creates_outputs=creates_outputs):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    manager, run_id = self._run_fake_workflow(
+                        Path(temp_dir), create_outputs=creates_outputs
+                    )
+                    before = manager.store.get(run_id)
+                    run_dir = manager.store.run_dir(run_id)
+                    log_before = (run_dir / "run.log").read_bytes()
+                    artifact_before = {
+                        path.name: path.read_bytes()
+                        for path in (run_dir / "outputs").iterdir() if path.is_file()
+                    }
+                    with patch.object(manager, "_find_rscript") as find_rscript:
+                        manager.execute(
+                            run_id, {"workflow_id": before["workflow_id"], **before["parameters"]}
+                        )
+                    find_rscript.assert_not_called()
+                    self.assertEqual(manager.store.get(run_id), before)
+                    self.assertEqual((run_dir / "run.log").read_bytes(), log_before)
+                    self.assertEqual(
+                        {path.name: path.read_bytes()
+                         for path in (run_dir / "outputs").iterdir() if path.is_file()},
+                        artifact_before,
+                    )
+
+    def test_recovered_and_running_run_cannot_be_started_again(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = RuntimeConfig(
+                project_root=PROJECT_ROOT,
+                input_root=root / "inputs",
+                runs_root=root / "runs",
+                max_run_seconds=5,
+            )
+            manager = RunManager(config=config)
+            request = RunRequest(counts_file="counts.csv", metadata_file="metadata.csv")
+            running = manager.create_run(request)
+            recovered = manager.create_run(request)
+            manager.store.update(
+                running["run_id"], status="running", started_at="2026-10-24T00:00:00+00:00"
+            )
+            # An active run must not be reexecuted by a duplicate scheduler.
+            with patch.object(manager, "_find_rscript") as find_rscript:
+                manager.execute(running["run_id"], request.model_dump())
+            find_rscript.assert_not_called()
+            self.assertEqual(manager.store.get(running["run_id"])["status"], "running")
+            self.assertFalse((manager.store.run_dir(running["run_id"]) / "tmp").exists())
+
+            manager.store.recover_interrupted_runs()
+            previous = manager.store.get(recovered["run_id"])
+            with patch.object(manager, "_find_rscript") as find_rscript:
+                manager.execute(recovered["run_id"], request.model_dump())
+            find_rscript.assert_not_called()
+            self.assertEqual(manager.store.get(recovered["run_id"]), previous)
+            self.assertFalse((manager.store.run_dir(recovered["run_id"]) / "tmp").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
