@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from app.registry import get_workflow
 from app.schemas import RunRequest
-from artifacts.manifest import ArtifactManifestError, load_artifact_manifest, write_artifact_manifest
+from artifacts.manifest import load_artifact_manifest, write_artifact_manifest
 from runtime.config import RuntimeConfig
 from runtime.environment import read_environment_versions
 from runtime.state import RunStore, utc_now

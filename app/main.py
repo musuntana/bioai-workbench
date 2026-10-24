@@ -17,7 +17,6 @@ from typing import Any, Literal
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from artifacts.manifest import ArtifactManifestError
 
 from app.registry import list_workflows
 from app.schemas import (
@@ -33,6 +32,7 @@ from app.schemas import (
 from runtime.config import RuntimeConfig
 from runtime.manager import RunManager
 from runtime.state import RunStore
+from artifacts.manifest import ArtifactManifestError
 
 config = RuntimeConfig.from_env()
 config.prepare()
