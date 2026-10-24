@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 _RUN_ID = re.compile(r"^[a-f0-9]{32}$")
-_ALLOWED_STATUSES = {"queued", "running", "succeeded", "failed", "timed_out"}
+_ALLOWED_STATUSES = {"queued", "running", "cancelling", "cancelled", "succeeded", "failed", "timed_out"}
 
 
 def utc_now() -> str:
@@ -113,6 +113,29 @@ class RunStore:
             self._write(run_id, record)
             return True
 
+    def request_cancel(self, run_id: str) -> dict[str, Any]:
+        """Move queued/active runs toward cancellation without changing terminal history."""
+        with self._lock:
+            record = self.get(run_id)
+            if record is None:
+                raise FileNotFoundError("Run not found.")
+            status = record["status"]
+            if status in {"cancelled", "cancelling"}:
+                return record
+            if status not in {"queued", "running"}:
+                raise ValueError("A completed run cannot be cancelled.")
+            now = utc_now()
+            if status == "queued":
+                record.update(
+                    status="cancelled", finished_at=now,
+                    error_message="Run cancelled before execution.",
+                )
+            else:
+                record["status"] = "cancelling"
+            record["updated_at"] = now
+            self._write(run_id, record)
+            return record
+
     def list_runs(
         self, *, limit: int = 20, offset: int = 0, status: str | None = None
     ) -> dict[str, Any]:
@@ -189,7 +212,7 @@ class RunStore:
                     continue
                 if not isinstance(record, dict) or record.get("run_id") != run_dir.name:
                     continue
-                if record.get("status") not in {"queued", "running"}:
+                if record.get("status") not in {"queued", "running", "cancelling"}:
                     continue
 
                 record.update(
