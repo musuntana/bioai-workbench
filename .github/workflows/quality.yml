@@ -113,13 +113,14 @@ jobs:
       - name: Set up R
         uses: r-lib/actions/setup-r@v2
         with:
-          r-version: "4.4"
+          r-version: "4.4.3"
           use-public-rspm: true
 
-      - name: Install DESeq2
+      - name: Install pinned Bioconductor and DESeq2
         run: |
-          Rscript -e 'if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")'
-          Rscript -e 'BiocManager::install("DESeq2", ask = FALSE, update = FALSE)'
+          Rscript -e 'if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager", repos = "https://cloud.r-project.org")'
+          Rscript -e 'BiocManager::install(version = "3.20", ask = FALSE, update = FALSE)'
+          Rscript -e 'BiocManager::install("DESeq2", version = "3.20", ask = FALSE, update = FALSE); stopifnot(as.character(packageVersion("DESeq2")) == "1.46.0")'
 
       - name: Run CLI synthetic-data smoke test
         run: bash scripts/smoke_test_deseq2.sh

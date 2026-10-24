@@ -4,7 +4,7 @@
 
 BioAI Workbench wraps established R/Python tools in a thin API and UI with validated inputs, observable runs, bounded execution, and checksummed artifacts. The first workflow is a two-condition differential-expression analysis using DESeq2.
 
-> **Project status:** the product skeleton and DESeq2 adapter are implemented on the current development branch. The clean-environment DESeq2 integration test remains pending. Do not treat the current skeleton as a hardened multi-user service or a clinically validated system.
+> **Project status:** the clean-environment synthetic DESeq2 CLI and API end-to-end acceptance passed on 2026-10-24 using R 4.4.3, Bioconductor 3.20.0, and DESeq2 1.46.0. See [the successful GitHub Actions run](https://github.com/musuntana/bioai-workbench/actions/runs/40044312203) and its `bioai-workbench-deseq2-verification` evidence artifact. This establishes a tested software baseline on synthetic data only; the project is not a hardened multi-user service or a clinically validated system.
 
 ## Product principles
 
@@ -33,7 +33,9 @@ Run in R:
 if (!requireNamespace("BiocManager", quietly = TRUE)) {
   install.packages("BiocManager")
 }
-BiocManager::install("DESeq2")
+BiocManager::install(version = "3.20")
+BiocManager::install("DESeq2", version = "3.20")
+stopifnot(as.character(packageVersion("DESeq2")) == "1.46.0")
 ```
 
 ### 3. Generate synthetic input files
@@ -121,7 +123,7 @@ Relative configuration paths are resolved from the repository root. The runtime 
 
 ## Tests and local safety checks
 
-Python dependencies are pinned in `uv.lock`. Use `uv lock` after changing `pyproject.toml`, commit both files together, and run `uv lock --check` before opening a pull request. The R/Bioconductor environment remains a separate reproducibility task.
+Python dependencies are pinned in `uv.lock`. Use `uv lock` after changing `pyproject.toml`, commit both files together, and run `uv lock --check` before opening a pull request. The manual real-environment gate pins R 4.4.3, Bioconductor 3.20, and DESeq2 1.46.0; a workflow contract test prevents silent drift from this verified baseline.
 
 ```bash
 uv run pytest
@@ -131,7 +133,7 @@ bash scripts/smoke_test_deseq2.sh
 bash scripts/smoke_test_api.sh
 ```
 
-The two smoke-test scripts require R and DESeq2; the API smoke test also requires the Python environment installed by `uv sync --locked --extra dev` and `curl`. It starts the API on loopback, uses synthetic data, waits for a successful run, downloads all four expected outputs, and verifies each downloaded SHA-256 against both the artifact manifest and response header. It then validates the results API against the downloaded DESeq2 CSV, checks the exact-gene view and standalone report, and performs a second real DESeq2 run using verified immutable snapshots. It requires identical result CSV bytes, matching input and workflow hashes, and consistent gene-level/gene-set comparisons. A deterministic Python evidence validator records each check in `acceptance-matrix.json`. This second execution is deliberately limited to the **manual opt-in** integration gate, not ordinary PR CI. Set `BIOAI_SMOKE_KEEP_ARTIFACTS=1` to retain a local evidence bundle containing the run status/logs, downloaded outputs, and a JSON summary with the R/DESeq2 versions and artifact hashes, plus the evidence files and `acceptance-matrix.json`. A successful normal PR check does **not** count as this real-environment acceptance. The real run must produce a successful integration-job URL and a passing acceptance matrix. These commands are verification tools, not scientific or clinical validation. The clean-environment integration run remains pending until a real run completes successfully. To run it on GitHub, open Actions → Targeted quality gates → Run workflow, enable `run_r_integration`, and start the workflow; the opt-in job executes both CLI and API paths and uploads the synthetic evidence bundle. Alternatively, the repository owner can post the exact comment `/run-deseq2-integration` on [Issue #1](https://github.com/musuntana/bioai-workbench/issues/1). This issue-scoped command is owner-only and does not run the R/DESeq2 job for ordinary issue or pull-request comments; the expensive job remains opt-in and is not part of normal PR CI.
+The two smoke-test scripts require R and DESeq2; the API smoke test also requires the Python environment installed by `uv sync --locked --extra dev` and `curl`. It starts the API on loopback, uses synthetic data, waits for a successful run, downloads all four expected outputs, and verifies each downloaded SHA-256 against both the artifact manifest and response header. It then validates the results API against the downloaded DESeq2 CSV, checks the exact-gene view and standalone report, and performs a second real DESeq2 run using verified immutable snapshots. It requires identical result CSV bytes, matching input and workflow hashes, and consistent gene-level/gene-set comparisons. A deterministic Python evidence validator records each check in `acceptance-matrix.json`. This second execution is deliberately limited to the **manual opt-in** integration gate, not ordinary PR CI. Set `BIOAI_SMOKE_KEEP_ARTIFACTS=1` to retain a local evidence bundle containing the run status/logs, downloaded outputs, and a JSON summary with the R/DESeq2 versions and artifact hashes, plus the evidence files and `acceptance-matrix.json`. A successful normal PR check does **not** count as this real-environment acceptance. The real run must produce a successful integration-job URL and a passing acceptance matrix. These commands are verification tools, not scientific or clinical validation. The clean-environment integration run passed on 2026-10-24: [Actions run #40044312203](https://github.com/musuntana/bioai-workbench/actions/runs/40044312203). The run used R 4.4.3, Bioconductor 3.20.0, and DESeq2 1.46.0. Its `bioai-workbench-deseq2-verification` artifact contains the acceptance matrix, run snapshots, manifests, downloaded artifacts, checksums, and report evidence (retained by GitHub until 2026-11-07). All eight acceptance categories passed, including result-CSV byte equality across a verified rerun; this is synthetic software verification, not biological or clinical validation. To run it on GitHub, open Actions → Targeted quality gates → Run workflow, enable `run_r_integration`, and start the workflow; the opt-in job executes both CLI and API paths and uploads the synthetic evidence bundle. Alternatively, the repository owner can post the exact comment `/run-deseq2-integration` on [Issue #1](https://github.com/musuntana/bioai-workbench/issues/1). This issue-scoped command is owner-only and does not run the R/DESeq2 job for ordinary issue or pull-request comments; the expensive job remains opt-in and is not part of normal PR CI.
 
 ## Architecture direction
 

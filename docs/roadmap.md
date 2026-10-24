@@ -16,10 +16,10 @@
 - [x] Implement a clean-room DESeq2 CLI workflow using synthetic input data.
 - [x] Save full/significant result tables, session information, parameters, and a run manifest with input/output fingerprints.
 - [x] Add an opt-in local integration smoke-test script covering valid input, expected artifacts, path-free manifest, mismatched samples, missing condition metadata, negative/non-integer counts, duplicate gene IDs, insufficient replicates, and integer overflow.
-- [ ] Run the smoke test in a clean R/Bioconductor environment and confirm all positive/negative cases.
-- [ ] Document and pin a tested R/DESeq2 dependency combination.
+- [x] Run the smoke test in a clean R/Bioconductor environment and confirm all positive/negative cases.
+- [x] Document and pin a tested R/DESeq2 dependency combination: R 4.4.3, Bioconductor 3.20.0, DESeq2 1.46.0.
 
-**Status:** implementation is present; runtime verification is pending. **Exit gate:** a clean environment can run the synthetic example and produce inspectable artifacts, and failure cases are tested. Statistical output should be validated against the documented fixture; do not claim clinical validity.
+**Status:** runtime verification passed on 2026-10-24. The [successful GitHub Actions run](https://github.com/musuntana/bioai-workbench/actions/runs/40044312203) confirms the CLI's valid run and seven invalid-input cases; the API run verified four downloaded artifacts against manifest/response-header SHA-256 values, all eight acceptance categories, and byte-identical result CSVs across a rerun with matching input/workflow fingerprints. The [evidence artifact](https://github.com/musuntana/bioai-workbench/actions/runs/40044312203/artifacts/12541036462) is retained until 2026-11-07. This exit gate establishes software behavior on synthetic data only, not scientific or clinical validity.
 
 ## M1.5 — Open-source product skeleton
 
@@ -31,9 +31,9 @@
 - [x] Add artifact manifests with relative paths and SHA-256 checksums.
 - [x] Add unit, API integration, and workflow contract tests.
 - [x] Add an opt-in API-to-DESeq2 smoke test and manual CI evidence capture using synthetic data.
-- [ ] Complete local end-to-end execution through the API in a clean R/DESeq2 environment.
+- [x] Complete clean-environment end-to-end execution through the API using synthetic inputs and real R/DESeq2.
 
-**Exit gate:** Python/API checks pass, the synthetic DESeq2 workflow succeeds through the UI/API, and timeout/failure/output-manifest evidence is recorded. This milestone does not mark M1's R verification as complete.
+**Exit gate:** met for the synthetic DESeq2 CLI/API path in [run #40044312203](https://github.com/musuntana/bioai-workbench/actions/runs/40044312203); four artifacts were verified and an immutable-snapshot rerun reproduced both result CSVs byte-for-byte. This is not evidence of production multi-user isolation or scientific validity.
 
 ## M1.6 — Input experience
 
