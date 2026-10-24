@@ -45,7 +45,7 @@ mkdir -p data/inputs/demo
 Rscript examples/deseq2/generate_synthetic_data.R data/inputs/demo
 ```
 
-The generated fixture is synthetic. The API accepts only relative CSV paths beneath `BIOAI_INPUT_ROOT`, which defaults to `data/inputs/`. You can also upload CSVs from the web UI; uploaded files are stored locally and are not sent to an external model. Use **Preview selected CSVs** to inspect the first rows of both files, then use **Validate inputs** to catch common schema and sample-matching errors before submitting the analysis.
+The generated fixture is synthetic. The API accepts only relative CSV paths beneath `BIOAI_INPUT_ROOT`, which defaults to `data/inputs/`. You can also upload CSVs from the web UI; uploaded files are stored locally and are not sent to an external model. Use **Preview selected CSVs** to inspect the first rows of both files, then use **Validate inputs** to catch common schema and sample-matching errors before submitting the analysis. Validation also displays per-sample raw-count library sizes, all-zero gene counts and a descriptive depth-imbalance warning; a completely empty sample library is rejected before execution.
 
 ### 4. Start the local workbench
 
