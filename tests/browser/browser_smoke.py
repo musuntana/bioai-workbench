@@ -6,6 +6,7 @@ Run only through the isolated browser-smoke workflow (Playwright is optional).
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -174,11 +175,68 @@ def run_browser_smoke(page, old_run_id: str) -> list[str]:
         f'#history-list input[aria-label="Select run {old_run_id} for comparison"]'
     ).check()
     expect(page.locator("#history-selection-summary")).to_contain_text("Selected (2/2)")
+    page.locator("#result-padj-max").fill("0.04")
+    page.locator("#result-min-abs-log2fc").fill("1.5")
     page.locator("#compare-history").click()
     expect(page.locator("#comparison-summary")).to_contain_text(
         "Same workflow: true", timeout=10_000
     )
     checks.append("browser_cross_page_history_comparison")
+
+    # The links must work in a real browser, not merely exist in static HTML.
+    # The old seed only contains gene_alpha; the newly completed fake run has
+    # three genes. Full alignment must retain the two new-only IDs.
+    expect(page.locator("#gene-comparison-summary")).to_contain_text(
+        "Shared tested genes: 1", timeout=10_000
+    )
+    aligned_link = page.locator("#gene-comparison-all-export")
+    report_link = page.locator("#gene-comparison-report")
+    expect(aligned_link).to_be_visible()
+    expect(report_link).to_be_visible()
+    aligned_href = aligned_link.get_attribute("href")
+    report_href = report_link.get_attribute("href")
+    assert aligned_href and "scope=all" in aligned_href
+    for link in (aligned_href, report_href):
+        assert "padj_max=0.04" in link and "min_abs_log2fc=1.5" in link
+        assert f"run_a={success_id}" in link and f"run_b={old_run_id}" in link
+
+    with page.expect_download(timeout=15_000) as csv_event:
+        aligned_link.click()
+    csv_download = csv_event.value
+    assert csv_download.suggested_filename == "deg_all_gene_comparison.csv"
+    with Path(csv_download.path()).open(encoding="utf-8-sig", newline="") as handle:
+        downloaded_genes = list(csv.DictReader(handle))
+    assert {item["gene_id"] for item in downloaded_genes} == {
+        "gene_alpha", "gene_beta", "gene_gamma"
+    }
+    assert next(item for item in downloaded_genes if item["gene_id"] == "gene_alpha")[
+        "category"
+    ] == "both"
+    assert all(
+        item["category"] == "only_a_tested"
+        for item in downloaded_genes if item["gene_id"] != "gene_alpha"
+    )
+    assert all(
+        item["padj_max"] == "0.04" and item["min_abs_log2fc"] == "1.5"
+        for item in downloaded_genes
+    )
+
+    with page.expect_download(timeout=15_000) as html_event:
+        report_link.click()
+    html_download = html_event.value
+    assert html_download.suggested_filename == "deg_cross_run_report.html"
+    report_html = Path(html_download.path()).read_text(encoding="utf-8")
+    assert success_id in report_html and old_run_id in report_html
+    assert "Both runs tested: 1" in report_html
+    assert "of\n 3 union genes" in report_html
+    assert "No between-run hypothesis test was performed" in report_html
+    assert "<script" not in report_html.lower()
+    checks.append("browser_verified_full_union_and_html_report_downloads")
+
+    page.locator("#history-clear-selection").click()
+    expect(aligned_link).to_be_hidden()
+    expect(report_link).to_be_hidden()
+    checks.append("browser_comparison_links_invalidate_on_selection_change")
 
     _upload(page, "browser_slow_counts.csv", COUNTS.replace("gene_alpha", "slow_gene"))
     _select_inputs(page, "browser_slow_counts.csv")
