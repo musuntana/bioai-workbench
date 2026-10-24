@@ -23,6 +23,18 @@ curl "http://127.0.0.1:8000/api/v1/inputs/preview?filename=demo/counts.csv&limit
 ```
 
 `filename` must be a relative CSV path inside the configured input root. `limit` is between 1 and 20 (default 8). The response returns relative path, file size, columns, sample rows, and a `has_more` flag. Files larger than 25 MiB, malformed rows, traversal paths, and files outside the input root are rejected. Preview content may contain research identifiers, so keep the unauthenticated service bound to localhost.
+## Preflight count-depth indicators
+
+`POST /api/v1/inputs/validate` returns `valid`, `errors`, `summary`, and a non-blocking `warnings` list. Alongside the existing counts/metadata schema checks, it computes the following from the validated raw counts matrix in the **same CSV scan**:
+
+- `summary.library_sizes`: exact sum of integer counts for each sample column (in original header order).
+- `summary.all_zero_genes`: genes with zero counts in every sample.
+- `summary.zero_library_samples`: sample columns with no counts; this is a blocking validation error.
+- `summary.library_size_ratio`: maximum/minimum positive library-size ratio; `null` when any library is zero or the matrix is invalid.
+- `warnings[]`: a descriptive note when the largest raw-count library is at least 5× the smallest. This is only a screening heuristic, **not** a DESeq2 significance or quality threshold.
+
+When counts are malformed, QC totals are withheld rather than presented as a complete profile. The UI shows per-sample raw count totals without inserting sample IDs as HTML. No new Python/R dependency or additional file scan is required. Input QC is not evidence of good biological replication or valid experimental design, and these raw totals are **not DESeq2-normalized counts**.
+
 ## Submit a DESeq2 run
 
 Input files must already exist under `BIOAI_INPUT_ROOT` (default `data/inputs/`). Use relative paths; absolute paths, traversal segments, non-CSV extensions, and symlinks escaping the root are rejected.
