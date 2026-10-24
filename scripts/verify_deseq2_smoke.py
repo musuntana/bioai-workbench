@@ -13,6 +13,12 @@ import math
 from pathlib import Path
 from typing import Any
 
+# Support both `python scripts/verify_deseq2_smoke.py` and pytest imports.
+if __package__:
+    from .verify_evidence_rows import EvidenceRowsError, verify_result_rows
+else:
+    from verify_evidence_rows import EvidenceRowsError, verify_result_rows
+
 
 class AcceptanceError(ValueError):
     """An observable scientific workflow acceptance condition failed."""
@@ -107,6 +113,11 @@ def verify_bundle(bundle: Path) -> dict[str, Any]:
         _number(row["padj"]) is None for row in rows
     ), "Results API missing adjusted-p count mismatch")
     _require(len(results["rows"]) == len(rows), "Results API did not return all fixture genes")
+    # Validate each numeric row and each sampled plot point against the verified CSV.
+    try:
+        verify_result_rows(rows, results)
+    except EvidenceRowsError as exc:
+        raise AcceptanceError(str(exc)) from exc
     _require(len(results["plot_points"]) > 0 and len(results["ma_points"]) > 0,
              "Volcano or MA plot returned no real points")
     _require(all(item["gene_id"] in source for item in results["plot_points"]),
