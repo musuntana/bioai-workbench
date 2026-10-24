@@ -16,6 +16,12 @@ def _run(store, run_id, csv):
     output = store.run_dir(run_id) / "outputs"
     file = output / "differential_expression_all.csv"
     file.write_text("gene_id,baseMean,log2FoldChange,pvalue,padj\n" + csv, encoding="utf-8")
+    for name, content in (
+        ("differential_expression_significant.csv", "gene_id,baseMean,log2FoldChange,pvalue,padj\\n"),
+        ("run_manifest.tsv", "key\\tvalue\\n"),
+        ("session_info.txt", "synthetic session info\\n"),
+    ):
+        (output / name).write_text(content, encoding="utf-8")
     write_artifact_manifest(output, run_id=run_id, workflow_id="deseq2-basic")
     store.update(run_id, status="succeeded")
     return file

@@ -643,7 +643,7 @@ def get_run_artifacts(run_id: str) -> dict[str, Any]:
     try:
         artifacts = run_manager.get_artifacts(run_id)
     except ArtifactManifestError as exc:
-        raise HTTPException(status_code=409, detail="Artifact manifest is invalid or inconsistent.") from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Run not found.") from exc
     if artifacts is None:
@@ -733,7 +733,7 @@ def _load_verified_result_rows(
         artifacts = run_manager.get_artifacts(run_id)
         run_dir = run_manager.store.run_dir(run_id)
     except ArtifactManifestError as exc:
-        raise HTTPException(status_code=409, detail="Artifact manifest is invalid or inconsistent.") from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Run not found.") from exc
 
@@ -1084,7 +1084,7 @@ def download_run_artifact(run_id: str, artifact_path: str) -> FileResponse:
         artifacts = run_manager.get_artifacts(run_id)
         run_dir = run_manager.store.run_dir(run_id)
     except ArtifactManifestError as exc:
-        raise HTTPException(status_code=409, detail="Artifact manifest is invalid or inconsistent.") from exc
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     if artifacts is None:
