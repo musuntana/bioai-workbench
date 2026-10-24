@@ -58,6 +58,8 @@ The deterministic planner maps a small set of task names to the registered DESeq
 
 The first runtime is local and file-backed. It creates opaque run IDs, atomically persists state, resolves relative input files under `BIOAI_INPUT_ROOT`, launches subprocesses without a shell, passes a restricted environment, enforces wall-clock and log-size limits, and checks expected output files.
 
+Before touching run logs, snapshots or outputs, an executor claims the queued record under the RunStore process lock. A second dispatch for an already running or terminal run exits without side effects. Exact-snapshot reruns create a new run ID, so this guard does not prevent intentional reruns. This is an **in-process safety boundary only**: it is not a filesystem lease, distributed queue, or fence for multiple Uvicorn workers. Do not share a runs directory between worker processes; add coordinated persistence/ownership before allowing multi-process execution.
+
 This is **not** a hardened sandbox. It is designed for a single trusted local user. Do not expose the unauthenticated API to untrusted networks. Use OS/container isolation before running untrusted workflows.
 
 ### 6. Artifacts and provenance — `artifacts/`
