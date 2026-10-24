@@ -165,4 +165,4 @@ def test_comparison_report_ui_offers_html_and_full_union_export():
     assert 'id="gene-comparison-report"' in home.text
     assert 'id="gene-comparison-all-export"' in home.text
     assert '/compare/genes/report?' in home.text
-    assert 'scope: "all"' in home.text
+    assert 'allQuery.set("scope", "all")' in home.text
