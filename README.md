@@ -91,7 +91,7 @@ The canonical R implementation now lives in `workflows/deseq2/run.R`.
 - `GET /api/v1/runs/{run_id}/results` — preview, search, sort, paginate, and filter the verified DESeq2 result table; returns capped volcano-plot points.
 - `GET /api/v1/runs/{run_id}/results/export` — download all rows matching the table filters as a CSV, preserving the original result values.
 
-See [the API guide](docs/api.md) and [reproducibility contract](docs/reproducibility.md).
+See [the API guide](docs/api.md), [reproducibility contract](docs/reproducibility.md), and [verified synthetic end-to-end evidence](docs/verification/2026-10-24-deseq2-synthetic-e2e.md).
 
 ## Repository map
 
