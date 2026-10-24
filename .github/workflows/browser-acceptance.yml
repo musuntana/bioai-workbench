@@ -1,0 +1,54 @@
+name: Browser acceptance (synthetic, opt-in)
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/browser-acceptance.yml"
+      - "tests/browser/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-acceptance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser-acceptance:
+    name: Real Chromium and synthetic local runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install locked workbench dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Install pinned optional browser runner
+        run: uv pip install --python .venv/bin/python "playwright==1.56.0"
+
+      - name: Install isolated Chromium runtime
+        run: .venv/bin/python -m playwright install --with-deps chromium
+
+      - name: Run browser-to-runtime acceptance with synthetic inputs
+        env:
+          BIOAI_BROWSER_EVIDENCE_DIR: browser-evidence
+        run: .venv/bin/python tests/browser/browser_smoke.py
+
+      - name: Upload synthetic browser acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-acceptance-evidence
+          path: browser-evidence/**
+          if-no-files-found: warn
+          retention-days: 7
